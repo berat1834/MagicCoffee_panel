@@ -108,7 +108,7 @@ function DashboardView({ data, loading, onRefresh, onNavigate }: { data: Dashboa
 }
 
 const STANDARD_CONTENT: CustomizationOption[] = [
-  ['no-foam', 'Köpüksüz'], ['extra-foam', 'Ekstra köpük'], ['less-sweet', 'Az tatlı'], ['decaf', 'Kafeinsiz espresso'],
+  ['no-foam', 'Köpüksüz'], ['extra-foam', 'Ekstra köpük'], ['less-sweet', 'Az tatlı'], ['decaf', 'Kafeinsiz seçenek'],
 ].map(([id, name]) => ({ id, name, priceDelta: 0, defaultSelected: true, enabled: true }));
 const COFFEE_SIZES: CustomizationOption[] = [
   { id: 'small', name: 'Küçük', priceDelta: 0, defaultSelected: true, enabled: true },
@@ -118,7 +118,7 @@ const COFFEE_SIZES: CustomizationOption[] = [
 const defaultCustomization = (kind: ProductDraft['kind']): ProductCustomization => {
   const drink = kind === 'coffee' || kind === 'cold-coffee';
   return {
-    content: { enabled: drink, title: 'Kahve Notları', options: drink ? STANDARD_CONTENT.map((item) => ({ ...item })) : [] },
+    content: { enabled: drink, title: 'Ürün Notları', options: drink ? STANDARD_CONTENT.map((item) => ({ ...item })) : [] },
     sides: { enabled: drink, title: 'Boyut Seçimi', options: drink ? COFFEE_SIZES.map((item) => ({ ...item })) : [] },
     drinks: { enabled: false, title: 'Yan Ürün Seçimi', options: [] },
   };
@@ -150,9 +150,9 @@ function ProductCustomizationEditor({ value, products, productId, onChange }: { 
   const addContent = () => emit('content', { options: [...value.content.options, { id: `custom-${Date.now()}`, name: 'Yeni içerik', priceDelta: 0, defaultSelected: true, enabled: true }] });
 
   const cards: Array<{ key: StepKey; label: string; hint: string }> = [
-    { key: 'content', label: 'Kahve notları', hint: 'Köpük, tatlılık ve kafein tercihlerini belirleyin.' },
+    { key: 'content', label: 'Ürün notları', hint: 'Köpük, tatlılık ve servis tercihlerini belirleyin.' },
     { key: 'sides', label: 'Boyut seçimi', hint: 'Kioskta sunulacak bardak boylarını seçin.' },
-    { key: 'drinks', label: 'Yan ürün seçimi', hint: 'Kahvenin yanında önerilecek tatlı veya atıştırmalıkları seçin.' },
+    { key: 'drinks', label: 'Yan ürün seçimi', hint: 'Ürünün yanında önerilecek tatlı veya atıştırmalıkları seçin.' },
   ];
 
   return <section className="customization-editor span-2">
@@ -217,6 +217,7 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
   const [error, setError] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState('');
+  const isCustomizableDrink = draft.kind === 'coffee' || draft.kind === 'cold-coffee';
   const set = <K extends keyof ProductDraft>(key: K, value: ProductDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const selectImage = (file?: File) => {
     if (!file) return;
@@ -242,11 +243,11 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
         <div><b>Bilgisayardan ürün görseli seç</b><small>PNG, JPG veya WEBP · En fazla 5 MB</small>{imageFile && <em>{imageFile.name}</em>}</div>
         <label className="file-picker"><ImagePlus /><span>Dosya Seç</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => selectImage(event.target.files?.[0])} /></label>
       </div>
-      <label><span>Menşei / çekirdek</span><input value={draft.protein ?? ''} onChange={(e) => set('protein', e.target.value || undefined)} placeholder="Kolombiya / Etiyopya" /></label>
-      <label><span>Shot sayısı</span><input min="1" max="10" type="number" value={draft.patties ?? ''} onChange={(e) => set('patties', e.target.value ? Number(e.target.value) : undefined)} /></label>
+      <label><span>Ürün etiketi</span><input value={draft.protein ?? ''} onChange={(e) => set('protein', e.target.value || undefined)} placeholder="Sıcak / Soğuk / Tatlı / Atıştırmalık" /></label>
+      <label><span>Servis ölçüsü</span><input min="1" max="10" type="number" value={draft.patties ?? ''} onChange={(e) => set('patties', e.target.value ? Number(e.target.value) : undefined)} /></label>
       <label><span>Başlangıç stoğu</span><input min="0" type="number" value={draft.stockQuantity ?? ''} onChange={(e) => set('stockQuantity', e.target.value === '' ? null : Number(e.target.value))} placeholder="Takip edilmiyorsa boş" /></label>
       <label><span>Kritik stok</span><input min="0" type="number" value={draft.criticalStock ?? ''} onChange={(e) => set('criticalStock', e.target.value === '' ? null : Number(e.target.value))} /></label>
-      <ProductCustomizationEditor productId={product?.id} value={draft.customization} products={products} onChange={(customization) => setDraft((current) => ({ ...current, customization, customizable: Object.values(customization).some((step) => step.enabled && step.options.some((option) => option.enabled)) }))} />
+      {isCustomizableDrink && <ProductCustomizationEditor productId={product?.id} value={draft.customization} products={products} onChange={(customization) => setDraft((current) => ({ ...current, customization, customizable: Object.values(customization).some((step) => step.enabled && step.options.some((option) => option.enabled)) }))} />}
       <div className="check-row span-2"><label><input type="checkbox" checked={draft.active} onChange={(e) => set('active', e.target.checked)} /><span>Satışta</span></label><label><input type="checkbox" checked={draft.popular} onChange={(e) => set('popular', e.target.checked)} /><span>Çok sevilen</span></label><span className={`customizable-state ${draft.customizable ? 'active' : ''}`}><Sparkles /> {draft.customizable ? 'Seçim akışı aktif' : 'Seçim akışı kapalı'}</span></div>
     </form>
   </Modal>;
