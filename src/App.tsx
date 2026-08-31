@@ -212,7 +212,7 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
     customizable: product.customizable, popular: product.popular, active: product.active,
     stockQuantity: product.stockQuantity, criticalStock: product.criticalStock,
     stockTrackingEnabled: product.stockTrackingEnabled, stockSellable: product.stockSellable,
-    customization: product.customization ?? defaultCustomization(product.kind),
+    customization: product.customization && 'content' in product.customization ? product.customization : defaultCustomization(product.kind),
   } : emptyProduct(categories[0]?.id));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
