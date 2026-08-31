@@ -1,0 +1,59 @@
+import type { AdminOrder, Category, Dashboard, Product, ProductDraft, Report, StockMovement } from './types';
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+  });
+  if (response.status === 204) return undefined as T;
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || 'İşlem tamamlanamadı.');
+  }
+  return response.json() as Promise<T>;
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Görsel dosyası okunamadı.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+export const api = {
+  health: () => request<{ status: string; database: string }>('/health'),
+  dashboard: () => request<Dashboard>('/api/admin/dashboard'),
+  categories: () => request<Category[]>('/api/admin/categories'),
+  createCategory: (payload: Partial<Category>) => request<Category>('/api/admin/categories', { method: 'POST', body: JSON.stringify(payload) }),
+  updateCategory: (id: string, payload: Partial<Category>) => request<Category>(`/api/admin/categories/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteCategory: (id: string) => request<void>(`/api/admin/categories/${id}`, { method: 'DELETE' }),
+  reorderCategories: (ids: string[]) => request('/api/admin/categories/reorder', { method: 'POST', body: JSON.stringify({ ids }) }),
+  products: () => request<Product[]>('/api/admin/products'),
+  createProduct: (payload: ProductDraft) => request<Product>('/api/admin/products', { method: 'POST', body: JSON.stringify(payload) }),
+  updateProduct: (id: string, payload: Partial<ProductDraft>) => request<Product>(`/api/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteProduct: (id: string) => request<void>(`/api/admin/products/${id}`, { method: 'DELETE' }),
+  stock: () => request<Product[]>('/api/admin/stock'),
+  adjustStock: (id: string, payload: { mode: 'set' | 'add' | 'remove'; quantity: number; note: string }) =>
+    request<Product>(`/api/admin/stock/${id}/adjust`, { method: 'POST', body: JSON.stringify(payload) }),
+  updateStockSettings: (id: string, payload: { stockTrackingEnabled?: boolean; stockSellable?: boolean }) =>
+    request<Product>(`/api/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  uploadProductImage: async (file: File) => {
+    if (file.size > 5 * 1024 * 1024) throw new Error('Görsel boyutu en fazla 5 MB olabilir.');
+    const dataUrl = await readAsDataUrl(file);
+    return request<{ path: string }>('/api/admin/uploads/product-image', {
+      method: 'POST', body: JSON.stringify({ filename: file.name, dataUrl }),
+    });
+  },
+  stockMovements: () => request<StockMovement[]>('/api/admin/stock/movements'),
+  orders: () => request<AdminOrder[]>('/api/admin/orders'),
+  reports: (start: string, end: string) => request<Report>(`/api/admin/reports?start=${start}&end=${end}`),
+};
+
+export function assetUrl(path?: string) {
+  if (!path) return '';
+  if (/^https?:\/\//.test(path)) return path;
+  if (path.startsWith('/uploads/')) return `http://127.0.0.1:8300${path}`;
+  return `http://127.0.0.1:5370${path}`;
+}
