@@ -9,7 +9,7 @@ export type Category = {
   productCount: number;
 };
 
-export type ProductKind = 'coffee' | 'cold-coffee' | 'burger' | 'menu' | 'bundle' | 'simple';
+export type ProductKind = 'coffee' | 'cold-coffee' | 'simple';
 
 export type CustomizationOption = {
   id: string;

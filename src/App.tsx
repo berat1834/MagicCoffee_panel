@@ -50,16 +50,15 @@ const navGroups: Array<{ label: string; items: Array<{ key: ViewKey; label: stri
 ];
 
 function Brand() {
-  return <div className="brand"><span><BurgerLogoIcon /></span><div><small>MAGIC COFFEE</small><b>Operasyon Paneli</b></div></div>;
+  return <div className="brand"><span><CoffeeLogoIcon /></span><div><small>MAGIC COFFEE</small><b>Operasyon Paneli</b></div></div>;
 }
 
-function BurgerLogoIcon() {
+function CoffeeLogoIcon() {
   return <svg viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M10 27c.8-10.5 9.1-18 22-18s21.2 7.5 22 18H10Z" fill="currentColor" fillOpacity=".12" />
-    <path d="m22 16 2 2m8-4v3m10-1-2 2" />
-    <path d="M8 31h48v7H8z" />
-    <path d="M9 41h46l-5 7-7-4-7 4-7-4-7 4-6-4-7 4-4-7Z" fill="currentColor" fillOpacity=".16" />
-    <path d="M9 51h46v1c0 4-3 7-7 7H16c-4 0-7-3-7-7v-1Z" fill="currentColor" fillOpacity=".12" />
+    <path d="M18 22h28v18c0 8-6 14-14 14s-14-6-14-14V22Z" fill="currentColor" fillOpacity=".12" />
+    <path d="M46 27h3c4 0 7 3 7 7s-3 7-7 7h-3" />
+    <path d="M23 12c-2 3 2 4 0 7m9-7c-2 3 2 4 0 7m9-7c-2 3 2 4 0 7" />
+    <path d="M15 56h34" />
   </svg>;
 }
 
@@ -109,19 +108,19 @@ function DashboardView({ data, loading, onRefresh, onNavigate }: { data: Dashboa
 }
 
 const STANDARD_CONTENT: CustomizationOption[] = [
-  ['tomato', 'Domates'], ['lettuce', 'Marul'], ['cheddar', 'Cheddar Peyniri'], ['onion', 'Soğan'], ['pickle', 'Turşu'],
+  ['no-foam', 'Köpüksüz'], ['extra-foam', 'Ekstra köpük'], ['less-sweet', 'Az tatlı'], ['decaf', 'Kafeinsiz espresso'],
 ].map(([id, name]) => ({ id, name, priceDelta: 0, defaultSelected: true, enabled: true }));
-const FRY_SIZES: CustomizationOption[] = [
+const COFFEE_SIZES: CustomizationOption[] = [
   { id: 'small', name: 'Küçük', priceDelta: 0, defaultSelected: true, enabled: true },
   { id: 'medium', name: 'Orta', priceDelta: 20, defaultSelected: false, enabled: true },
   { id: 'large', name: 'Büyük', priceDelta: 35, defaultSelected: false, enabled: true },
 ];
 const defaultCustomization = (kind: ProductDraft['kind']): ProductCustomization => {
-  const menu = kind === 'menu' || kind === 'bundle';
+  const drink = kind === 'coffee' || kind === 'cold-coffee';
   return {
-    content: { enabled: kind !== 'simple', title: 'Burger İçeriği', options: kind === 'simple' ? [] : STANDARD_CONTENT.map((item) => ({ ...item })) },
-    sides: { enabled: menu, title: 'Patates Boyu', options: menu ? FRY_SIZES.map((item) => ({ ...item })) : [] },
-    drinks: { enabled: menu, title: 'İçecek Seçimi', options: [] },
+    content: { enabled: drink, title: 'Kahve Notları', options: drink ? STANDARD_CONTENT.map((item) => ({ ...item })) : [] },
+    sides: { enabled: drink, title: 'Boyut Seçimi', options: drink ? COFFEE_SIZES.map((item) => ({ ...item })) : [] },
+    drinks: { enabled: false, title: 'Yan Ürün Seçimi', options: [] },
   };
 };
 
@@ -133,7 +132,7 @@ const emptyProduct = (categoryId = ''): ProductDraft => ({
 
 function ProductCustomizationEditor({ value, products, productId, onChange }: { value: ProductCustomization; products: Product[]; productId?: string; onChange: (value: ProductCustomization) => void }) {
   type StepKey = keyof ProductCustomization;
-  const drinkProducts = products.filter((item) => item.id !== productId && item.categoryId === 'drinks' && item.active);
+  const drinkProducts = products.filter((item) => item.id !== productId && ['desserts', 'snacks'].includes(item.categoryId) && item.active);
   const emit = (key: StepKey, patch: Partial<ProductCustomization[StepKey]>) => onChange({ ...value, [key]: { ...value[key], ...patch } });
   const updateOption = (key: StepKey, id: string, patch: Partial<CustomizationOption>) => emit(key, { options: value[key].options.map((item) => item.id === id ? { ...item, ...patch } : item) });
   const togglePreset = (key: 'sides' | 'drinks', preset: CustomizationOption, enabled: boolean) => {
@@ -151,9 +150,9 @@ function ProductCustomizationEditor({ value, products, productId, onChange }: { 
   const addContent = () => emit('content', { options: [...value.content.options, { id: `custom-${Date.now()}`, name: 'Yeni içerik', priceDelta: 0, defaultSelected: true, enabled: true }] });
 
   const cards: Array<{ key: StepKey; label: string; hint: string }> = [
-    { key: 'content', label: 'İçerik / Sos seçimi', hint: 'Burger malzemelerini ürüne özel belirleyin.' },
-    { key: 'sides', label: 'Yan ürün seçimi', hint: 'Sunulacak patates boylarını seçin.' },
-    { key: 'drinks', label: 'İçecek seçimi', hint: 'Mevcut içeceklerden kioskta gösterilecekleri seçin.' },
+    { key: 'content', label: 'Kahve notları', hint: 'Köpük, tatlılık ve kafein tercihlerini belirleyin.' },
+    { key: 'sides', label: 'Boyut seçimi', hint: 'Kioskta sunulacak bardak boylarını seçin.' },
+    { key: 'drinks', label: 'Yan ürün seçimi', hint: 'Kahvenin yanında önerilecek tatlı veya atıştırmalıkları seçin.' },
   ];
 
   return <section className="customization-editor span-2">
@@ -168,25 +167,25 @@ function ProductCustomizationEditor({ value, products, productId, onChange }: { 
             <input title="Kioskta göster" type="checkbox" checked={option.enabled} onChange={(event) => updateOption(key, option.id, { enabled: event.target.checked })} />
             <input aria-label="İçerik adı" value={option.name} onChange={(event) => updateOption(key, option.id, { name: event.target.value })} />
             <label className="default-choice"><input type="checkbox" checked={option.defaultSelected} onChange={(event) => updateOption(key, option.id, { defaultSelected: event.target.checked })} /><span>Standart</span></label>
-            <label className="price-choice"><input min="0" step="0.01" type="number" inputMode="decimal" placeholder="0" value={option.priceDelta || ''} onFocus={(event) => event.currentTarget.select()} onChange={(event) => updateOption(key, option.id, { priceDelta: event.target.value === '' ? 0 : Number(event.target.value) })} /><span>TL</span></label>
+            <label className="price-choice"><input min="0" step="0.1" type="number" inputMode="decimal" placeholder="0" value={option.priceDelta || ''} onFocus={(event) => event.currentTarget.select()} onChange={(event) => updateOption(key, option.id, { priceDelta: event.target.value === '' ? 0 : Number(event.target.value) })} /><span>TL</span></label>
             <button type="button" className="icon-danger" title="Seçeneği sil" onClick={() => emit(key, { options: step.options.filter((item) => item.id !== option.id) })}><Trash2 /></button>
           </div>)}
           <button type="button" className="add-choice" onClick={addContent}><Plus /> Seçenek Ekle</button>
         </div>}
         {step.enabled && key === 'sides' && <div className="choice-list">
-          {FRY_SIZES.map((preset) => {
+          {COFFEE_SIZES.map((preset) => {
             const option = step.options.find((item) => item.id === preset.id);
             const enabled = Boolean(option?.enabled);
             return <div className="choice-row choice-row--preset" key={preset.id}>
               <input type="checkbox" checked={enabled} onChange={(event) => togglePreset('sides', preset, event.target.checked)} />
-              <span className="preset-name"><b>{preset.name} Patates</b><small>{preset.id === 'small' ? 'Küçük boy' : 'Boy yükseltme seçeneği'}</small></span>
+              <span className="preset-name"><b>{preset.name} Boy</b><small>{preset.id === 'small' ? 'Küçük bardak' : 'Bardak boyu yükseltme'}</small></span>
               <label className="default-choice"><input type="radio" name="default-side" checked={Boolean(option?.defaultSelected)} disabled={!enabled} onChange={() => option && setDefault('sides', option.id)} /><span>Varsayılan</span></label>
-              <label className="price-choice"><input min="0" step="0.01" type="number" inputMode="decimal" placeholder="0" disabled={!enabled} value={(option?.priceDelta ?? preset.priceDelta) || ''} onFocus={(event) => event.currentTarget.select()} onChange={(event) => option && updateOption('sides', option.id, { priceDelta: event.target.value === '' ? 0 : Number(event.target.value) })} /><span>TL</span></label>
+              <label className="price-choice"><input min="0" step="0.1" type="number" inputMode="decimal" placeholder="0" disabled={!enabled} value={(option?.priceDelta ?? preset.priceDelta) || ''} onFocus={(event) => event.currentTarget.select()} onChange={(event) => option && updateOption('sides', option.id, { priceDelta: event.target.value === '' ? 0 : Number(event.target.value) })} /><span>TL</span></label>
             </div>;
           })}
         </div>}
         {step.enabled && key === 'drinks' && <div className="choice-list choice-list--drinks">
-          {!drinkProducts.length && <p className="choice-empty">Önce İçecekler kategorisine satışta olan bir ürün ekleyin.</p>}
+          {!drinkProducts.length && <p className="choice-empty">Önce Tatlılar veya Atıştırmalıklar kategorisine satışta olan bir ürün ekleyin.</p>}
           {drinkProducts.map((drink) => {
             const option = step.options.find((item) => item.sourceProductId === drink.id || item.id === drink.id);
             const enabled = Boolean(option?.enabled);
@@ -195,7 +194,7 @@ function ProductCustomizationEditor({ value, products, productId, onChange }: { 
               <input type="checkbox" checked={enabled} onChange={(event) => togglePreset('drinks', preset, event.target.checked)} />
               <span className="preset-name preset-name--image">{drink.image ? <img src={assetUrl(drink.image)} alt="" /> : <span>🥤</span>}<i><b>{drink.name}</b><small>{drink.stockSellable ? 'Satışta' : 'Anlık satışa kapalı'}</small></i></span>
               <label className="default-choice"><input type="radio" name="default-drink" checked={Boolean(option?.defaultSelected)} disabled={!enabled} onChange={() => option && setDefault('drinks', option.id)} /><span>Varsayılan</span></label>
-              <label className="price-choice"><input min="0" step="0.01" type="number" inputMode="decimal" placeholder="0" disabled={!enabled} value={option?.priceDelta || ''} onFocus={(event) => event.currentTarget.select()} onChange={(event) => option && updateOption('drinks', option.id, { priceDelta: event.target.value === '' ? 0 : Number(event.target.value) })} /><span>TL</span></label>
+              <label className="price-choice"><input min="0" step="0.1" type="number" inputMode="decimal" placeholder="0" disabled={!enabled} value={option?.priceDelta || ''} onFocus={(event) => event.currentTarget.select()} onChange={(event) => option && updateOption('drinks', option.id, { priceDelta: event.target.value === '' ? 0 : Number(event.target.value) })} /><span>TL</span></label>
             </div>;
           })}
         </div>}
@@ -222,7 +221,7 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
   const selectImage = (file?: File) => {
     if (!file) return;
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('PNG, JPG veya WEBP formatında bir görsel seçin.'); return; }
-    if (file.size > 5 * 1024 * 1024) { setError('Görsel boyutu en fazla 5 MC olabilir.'); return; }
+    if (file.size > 5 * 1024 * 1024) { setError('Görsel boyutu en fazla 5 MB olabilir.'); return; }
     setError(''); setImageFile(file);
     const reader = new FileReader();
     reader.onload = () => setImagePreview(String(reader.result));
@@ -234,17 +233,17 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
       {error && <div className="form-error">{error}</div>}
       <label><span>Ürün adı</span><input required value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="Magic Coffee" /></label>
       <label><span>Kategori</span><select required value={draft.categoryId} onChange={(e) => set('categoryId', e.target.value)}>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
-      <label><span>Fiyat (TL)</span><input required min="0" step="0.01" type="number" value={draft.price} onChange={(e) => set('price', Number(e.target.value))} /></label>
-      <label><span>Ürün tipi</span><select value={draft.kind} onChange={(e) => { const kind = e.target.value as ProductDraft['kind']; setDraft((current) => ({ ...current, kind, customization: defaultCustomization(kind), customizable: kind !== 'simple' })); }}><option value="simple">Standart</option><option value="burger">Burger</option><option value="menu">Menü</option><option value="bundle">Çok kişilik menü</option></select></label>
+      <label><span>Fiyat (TL)</span><input required min="0" step="0.1" type="number" value={draft.price} onChange={(e) => set('price', Number(e.target.value))} /></label>
+      <label><span>Ürün tipi</span><select value={draft.kind} onChange={(e) => { const kind = e.target.value as ProductDraft['kind']; setDraft((current) => ({ ...current, kind, customization: defaultCustomization(kind), customizable: kind !== 'simple' })); }}><option value="simple">Standart ürün</option><option value="coffee">Sıcak kahve</option><option value="cold-coffee">Soğuk kahve</option></select></label>
       <label className="span-2"><span>Açıklama</span><textarea value={draft.description} onChange={(e) => set('description', e.target.value)} placeholder="Kiosk kartında gösterilecek açıklama" /></label>
       <label className="span-2"><span>Görsel yolu veya URL</span><input value={draft.image ?? ''} onChange={(e) => { set('image', e.target.value); setImageFile(null); setImagePreview(''); }} placeholder="/images/products/urun.webp" /></label>
       <div className="product-image-picker span-2">
         <div className="product-image-preview">{imagePreview || draft.image ? <img src={imagePreview || assetUrl(draft.image)} alt="Ürün önizlemesi" /> : <ImagePlus />}</div>
-        <div><b>Bilgisayardan ürün görseli seç</b><small>PNG, JPG veya WEBP · En fazla 5 MC</small>{imageFile && <em>{imageFile.name}</em>}</div>
+        <div><b>Bilgisayardan ürün görseli seç</b><small>PNG, JPG veya WEBP · En fazla 5 MB</small>{imageFile && <em>{imageFile.name}</em>}</div>
         <label className="file-picker"><ImagePlus /><span>Dosya Seç</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => selectImage(event.target.files?.[0])} /></label>
       </div>
-      <label><span>Protein</span><input value={draft.protein ?? ''} onChange={(e) => set('protein', e.target.value || undefined)} placeholder="Et / Tavuk" /></label>
-      <label><span>Köfte katı</span><input min="1" max="10" type="number" value={draft.patties ?? ''} onChange={(e) => set('patties', e.target.value ? Number(e.target.value) : undefined)} /></label>
+      <label><span>Menşei / çekirdek</span><input value={draft.protein ?? ''} onChange={(e) => set('protein', e.target.value || undefined)} placeholder="Kolombiya / Etiyopya" /></label>
+      <label><span>Shot sayısı</span><input min="1" max="10" type="number" value={draft.patties ?? ''} onChange={(e) => set('patties', e.target.value ? Number(e.target.value) : undefined)} /></label>
       <label><span>Başlangıç stoğu</span><input min="0" type="number" value={draft.stockQuantity ?? ''} onChange={(e) => set('stockQuantity', e.target.value === '' ? null : Number(e.target.value))} placeholder="Takip edilmiyorsa boş" /></label>
       <label><span>Kritik stok</span><input min="0" type="number" value={draft.criticalStock ?? ''} onChange={(e) => set('criticalStock', e.target.value === '' ? null : Number(e.target.value))} /></label>
       <ProductCustomizationEditor productId={product?.id} value={draft.customization} products={products} onChange={(customization) => setDraft((current) => ({ ...current, customization, customizable: Object.values(customization).some((step) => step.enabled && step.options.some((option) => option.enabled)) }))} />
