@@ -85,7 +85,7 @@ function DashboardView({ data, loading, onRefresh, onNavigate }: { data: Dashboa
   const cards = [
     { label: 'AKTİF ÜRÜN', value: stats?.active_product_count ?? 0, note: `${stats?.product_count ?? 0} toplam ürün`, icon: ShoppingBag },
     { label: 'KATEGORİ', value: stats?.category_count ?? 0, note: 'Kiosk menüsünde', icon: Tags },
-    { label: 'BUGÜNKÜ SİPARİŞ', value: stats?.today_order_count ?? 0, note: 'Tamamlanan işlem', icon: ClipboardList },
+    { label: 'BUGÜNKÜ SİPARİŞ', value: stats?.today_order_count ?? 0, note: 'Bugün alınan işlem', icon: ClipboardList },
     { label: 'BUGÜNKÜ CİRO', value: money(stats?.today_revenue ?? 0), note: 'Güncel toplam', icon: TrendingUp, featured: true },
   ];
   return <>
@@ -369,8 +369,15 @@ function OrdersView({ orders, loading, onRefresh }: { orders: AdminOrder[]; load
 function ReportsView({ report, loading, onLoad }: { report: Report | null; loading: boolean; onLoad: (start: string, end: string) => void }) {
   const [start, setStart] = useState(daysAgo(6)); const [end, setEnd] = useState(today());
   useEffect(() => { onLoad(start, end); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const clearDates = () => {
+    const defaultStart = daysAgo(6);
+    const defaultEnd = today();
+    setStart(defaultStart);
+    setEnd(defaultEnd);
+    onLoad(defaultStart, defaultEnd);
+  };
   const maxRevenue = Math.max(...(report?.daily.map((item) => item.revenue) ?? [1]), 1);
-  return <><PageHeader eyebrow="RAPORLAMA" title="Satış raporları" description="Ciroyu, sipariş ortalamasını ve ürün performansını tarih aralığıyla analiz et." actions={<div className="date-filter"><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /><span>—</span><input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /><button className="primary" onClick={() => onLoad(start, end)}>Uygula</button></div>} />
+  return <><PageHeader eyebrow="RAPORLAMA" title="Satış raporları" description="Ciroyu, sipariş ortalamasını ve ürün performansını tarih aralığıyla analiz et." actions={<div className="date-filter"><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /><span>—</span><input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /><button className="secondary compact" onClick={clearDates}>Temizle</button><button className="primary" onClick={() => onLoad(start, end)}>Uygula</button></div>} />
     {loading && !report ? <Loading /> : <><div className="report-stats"><article><small>TOPLAM CİRO</small><b>{money(report?.summary.revenue ?? 0)}</b><span>Seçili tarih aralığı</span></article><article><small>SİPARİŞ</small><b>{report?.summary.order_count ?? 0}</b><span>Toplam işlem</span></article><article><small>ORTALAMA SEPET</small><b>{money(report?.summary.average_order ?? 0)}</b><span>Sipariş başına</span></article></div>
       <div className="report-layout"><section className="panel-card chart-card"><header><div><small>CİRO GÖRÜNÜMÜ</small><h3>Günlük satış</h3></div></header>{!report?.daily.length ? <Empty title="Bu aralıkta satış yok" text="Farklı bir tarih aralığı deneyin." /> : <div className="bar-chart">{report.daily.map((item) => <div key={item.day}><span><i style={{ height: `${Math.max(8, item.revenue / maxRevenue * 100)}%` }} /></span><b>{money(item.revenue)}</b><small>{new Date(`${item.day}T12:00:00`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}</small></div>)}</div>}</section>
       <section className="table-card"><div className="card-toolbar"><div><small>ÜRÜN PERFORMANSI</small><h3>En çok satanlar</h3></div></div>{!report?.products.length ? <Empty title="Ürün satışı yok" text="Siparişler geldikçe performans burada oluşur." /> : <div className="table-wrap"><table><thead><tr><th>Ürün</th><th>Kategori</th><th>Adet</th><th>Ciro</th></tr></thead><tbody>{report.products.map((product) => <tr key={product.product_id}><td><b>{product.name}</b></td><td><span className="tag">{product.category}</span></td><td>{product.quantity}</td><td><strong>{money(product.revenue)}</strong></td></tr>)}</tbody></table></div>}</section></div></>}
