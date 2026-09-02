@@ -1,6 +1,6 @@
 import type { AdminOrder, Category, Dashboard, Product, ProductDraft, Report, StockMovement } from './types';
 
-export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? 'https://magiccoffee-api.onrender.com').replace(/\/$/, '');
 export const KIOSK_URL = (import.meta.env.VITE_KIOSK_URL ?? 'http://127.0.0.1:5370').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
 
