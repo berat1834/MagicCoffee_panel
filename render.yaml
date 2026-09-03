@@ -1,0 +1,15 @@
+services:
+  - type: static
+    name: magiccoffee-panel
+    branch: Berat
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://magiccoffee-api.onrender.com
+      - key: VITE_KIOSK_URL
+        value: https://magiccoffee-ui.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
