@@ -220,6 +220,10 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
   const [error, setError] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState('');
+  const [priceInput, setPriceInput] = useState(() => product ? String(product.price) : '');
+  const [pattiesInput, setPattiesInput] = useState(() => product?.patties == null ? '' : String(product.patties));
+  const [stockQuantityInput, setStockQuantityInput] = useState(() => product?.stockQuantity == null ? '' : String(product.stockQuantity));
+  const [criticalStockInput, setCriticalStockInput] = useState(() => product?.criticalStock == null ? '' : String(product.criticalStock));
   const isCustomizableDrink = draft.kind === 'coffee' || draft.kind === 'cold-coffee';
   const set = <K extends keyof ProductDraft>(key: K, value: ProductDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const selectImage = (file?: File) => {
@@ -231,13 +235,55 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
     reader.onload = () => setImagePreview(String(reader.result));
     reader.readAsDataURL(file);
   };
-  const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); setError(''); try { let payload = draft; if (imageFile) { const uploaded = await api.uploadProductImage(imageFile); payload = { ...draft, image: uploaded.path }; } await onSave(payload); onClose(); } catch (err) { setError((err as Error).message); } finally { setSaving(false); } };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError('');
+
+    const price = Number(priceInput);
+    if (priceInput.trim() === '' || !Number.isFinite(price) || price < 0) {
+      setError('Geçerli bir ürün fiyatı girin.');
+      return;
+    }
+
+    const patties = pattiesInput.trim() === '' ? undefined : Number(pattiesInput);
+    if (patties !== undefined && (!Number.isInteger(patties) || patties < 1 || patties > 10)) {
+      setError('Servis ölçüsü 1 ile 10 arasında bir tam sayı olmalıdır.');
+      return;
+    }
+
+    const stockQuantity = stockQuantityInput.trim() === '' ? null : Number(stockQuantityInput);
+    if (stockQuantity !== null && (!Number.isInteger(stockQuantity) || stockQuantity < 0)) {
+      setError('Başlangıç stoğu sıfır veya pozitif bir tam sayı olmalıdır.');
+      return;
+    }
+
+    const criticalStock = criticalStockInput.trim() === '' ? null : Number(criticalStockInput);
+    if (criticalStock !== null && (!Number.isInteger(criticalStock) || criticalStock < 0)) {
+      setError('Kritik stok sıfır veya pozitif bir tam sayı olmalıdır.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      let payload: ProductDraft = { ...draft, price, patties, stockQuantity, criticalStock };
+      if (imageFile) {
+        const uploaded = await api.uploadProductImage(imageFile);
+        payload = { ...payload, image: uploaded.path };
+      }
+      await onSave(payload);
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
   return <Modal wide title={product ? 'Ürünü düzenle' : 'Yeni ürün ekle'} subtitle="MENÜ ÜRÜNÜ" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>Vazgeç</button><button className="primary" type="submit" form="product-form" disabled={saving}>{saving ? <><Loader2 className="spin" /> Görsel yükleniyor...</> : <><Check /> Kaydet</>}</button></>}>
     <form id="product-form" className="form-grid" onSubmit={submit}>
       {error && <div className="form-error">{error}</div>}
       <label><span>Ürün adı</span><input required value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="Magic Coffee" /></label>
       <label><span>Kategori</span><select required value={draft.categoryId} onChange={(e) => set('categoryId', e.target.value)}>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
-      <label><span>Fiyat (TL)</span><input required min="0" step="0.1" type="number" value={draft.price} onChange={(e) => set('price', Number(e.target.value))} /></label>
+      <label><span>Fiyat (TL)</span><input required min="0" step="0.01" type="number" inputMode="decimal" placeholder="0" value={priceInput} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setPriceInput(event.target.value)} /></label>
       <label><span>Ürün tipi</span><select value={draft.kind} onChange={(e) => { const kind = e.target.value as ProductDraft['kind']; setDraft((current) => ({ ...current, kind, customization: defaultCustomization(kind), customizable: kind !== 'simple' })); }}><option value="simple">Standart ürün</option><option value="coffee">Sıcak kahve</option><option value="cold-coffee">Soğuk kahve</option></select></label>
       <label className="span-2"><span>Açıklama</span><textarea value={draft.description} onChange={(e) => set('description', e.target.value)} placeholder="Kiosk kartında gösterilecek açıklama" /></label>
       <label className="span-2"><span>Görsel yolu veya URL</span><input value={draft.image ?? ''} onChange={(e) => { set('image', e.target.value); setImageFile(null); setImagePreview(''); }} placeholder="/images/products/urun.webp" /></label>
@@ -247,9 +293,9 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
         <label className="file-picker"><ImagePlus /><span>Dosya Seç</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => selectImage(event.target.files?.[0])} /></label>
       </div>
       <label><span>Ürün etiketi</span><input value={draft.protein ?? ''} onChange={(e) => set('protein', e.target.value || undefined)} placeholder="Sıcak / Soğuk / Tatlı / Atıştırmalık" /></label>
-      <label><span>Servis ölçüsü</span><input min="1" max="10" type="number" value={draft.patties ?? ''} onChange={(e) => set('patties', e.target.value ? Number(e.target.value) : undefined)} /></label>
-      <label><span>Başlangıç stoğu</span><input min="0" type="number" value={draft.stockQuantity ?? ''} onChange={(e) => set('stockQuantity', e.target.value === '' ? null : Number(e.target.value))} placeholder="Takip edilmiyorsa boş" /></label>
-      <label><span>Kritik stok</span><input min="0" type="number" value={draft.criticalStock ?? ''} onChange={(e) => set('criticalStock', e.target.value === '' ? null : Number(e.target.value))} /></label>
+      <label><span>Servis ölçüsü</span><input min="1" max="10" step="1" type="number" inputMode="numeric" placeholder="1" value={pattiesInput} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setPattiesInput(event.target.value)} /></label>
+      <label><span>Başlangıç stoğu</span><input min="0" step="1" type="number" inputMode="numeric" value={stockQuantityInput} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setStockQuantityInput(event.target.value)} placeholder="Takip edilmiyorsa boş" /></label>
+      <label><span>Kritik stok</span><input min="0" step="1" type="number" inputMode="numeric" placeholder="0" value={criticalStockInput} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setCriticalStockInput(event.target.value)} /></label>
       {isCustomizableDrink && <ProductCustomizationEditor productId={product?.id} value={draft.customization} products={products} onChange={(customization) => setDraft((current) => ({ ...current, customization, customizable: Object.values(customization).some((step) => step.enabled && step.options.some((option) => option.enabled)) }))} />}
       <div className="check-row span-2"><label><input type="checkbox" checked={draft.active} onChange={(e) => set('active', e.target.checked)} /><span>Satışta</span></label><label><input type="checkbox" checked={draft.popular} onChange={(e) => set('popular', e.target.checked)} /><span>Çok sevilen</span></label><span className={`customizable-state ${draft.customizable ? 'active' : ''}`}><Sparkles /> {draft.customizable ? 'Seçim akışı aktif' : 'Seçim akışı kapalı'}</span></div>
     </form>
@@ -360,7 +406,7 @@ function StockView({ products, movements, loading, onRefresh, onAdjust, onSettin
               <td>{tracking ? <strong className={quantity <= (product.criticalStock ?? 0) ? 'stock-low' : 'stock-ok'}>{quantity > 0 ? `VAR / ${quantity}` : 'YOK / 0'}</strong> : <span className="muted">Takip kapalı</span>}</td>
               <td><button className={`stock-toggle ${tracking ? 'is-on' : ''}`} disabled={savingSettings} onClick={() => changeSetting(product, { stockTrackingEnabled: !tracking })}>{savingSettings ? <Loader2 className="spin" /> : null}{tracking ? 'Açık' : 'Kapalı'}</button></td>
               <td><div className="kiosk-stock-state"><span className={`status ${sellable && (!tracking || quantity > 0) ? 'active' : ''}`}>{kioskStatus}</span><button className={`sale-toggle ${sellable ? '' : 'open'}`} disabled={savingSettings} onClick={() => changeSetting(product, { stockSellable: !sellable })}>{sellable ? 'Satışa Kapat' : 'Satışa Aç'}</button></div></td>
-              <td><div className="stock-inline-actions"><input type="number" min="1" step="1" value={quantityDrafts[product.id] ?? '1'} disabled={!tracking || savingStock} onChange={(event) => setQuantityDrafts((current) => ({ ...current, [product.id]: event.target.value }))} /><button className="stock-add" disabled={!tracking || savingStock} onClick={() => changeStock(product, 1)}>{savingStock ? <Loader2 className="spin" /> : <Plus />} Ekle</button><button className="stock-remove" disabled={!tracking || savingStock || quantity <= 0} onClick={() => changeStock(product, -1)}><Minus /> Azalt</button></div></td>
+              <td><div className="stock-inline-actions"><input type="number" inputMode="numeric" min="1" step="1" value={quantityDrafts[product.id] ?? '1'} disabled={!tracking || savingStock} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setQuantityDrafts((current) => ({ ...current, [product.id]: event.target.value }))} /><button className="stock-add" disabled={!tracking || savingStock} onClick={() => changeStock(product, 1)}>{savingStock ? <Loader2 className="spin" /> : <Plus />} Ekle</button><button className="stock-remove" disabled={!tracking || savingStock || quantity <= 0} onClick={() => changeStock(product, -1)}><Minus /> Azalt</button></div></td>
             </tr>;
           })}
           {!filtered.length && <tr><td colSpan={6}><Empty title="Ürün bulunamadı" text="Arama ifadesini değiştirip tekrar deneyin." /></td></tr>}
@@ -590,7 +636,8 @@ export default function App() {
   const updateStockSettings = async (id: string, payload: { stockTrackingEnabled?: boolean; stockSellable?: boolean }) => { await api.updateStockSettings(id, payload); await loadStock(); notify(payload.stockTrackingEnabled === true ? 'Stok takibi açıldı.' : payload.stockTrackingEnabled === false ? 'Stok takibi kapatıldı.' : payload.stockSellable === false ? 'Ürün anlık satışa kapatıldı.' : 'Ürün yeniden satışa açıldı.'); };
   const viewTitle = navGroups.flatMap((group) => group.items).find((item) => item.key === activeView)?.label ?? '';
   return <div className="app">
-    <header className="topbar"><button className="mobile-menu" onClick={() => setMobileNav((value) => !value)}><MenuIcon /></button><Brand /><div className="top-actions"><span className={`api-pill ${apiOnline ? 'online' : ''}`}><Activity /> Backend: {apiOnline ? 'online' : 'offline'}</span><a href={KIOSK_URL} target="_blank" rel="noreferrer"><ExternalLink /> Kiosku Aç</a><button onClick={() => setDark((value) => !value)}>{dark ? <Sun /> : <Moon />}{dark ? 'Aydınlık Mod' : 'Karanlık Mod'}</button><span className="avatar">MC</span></div></header>
+    <header className="topbar"><button className="mobile-menu" aria-label={mobileNav ? 'Menüyü kapat' : 'Menüyü aç'} aria-expanded={mobileNav} onClick={() => setMobileNav((value) => !value)}><MenuIcon /></button><Brand /><div className="top-actions"><span className={`api-pill ${apiOnline ? 'online' : ''}`}><Activity /> Backend: {apiOnline ? 'online' : 'offline'}</span><a href={KIOSK_URL} target="_blank" rel="noreferrer"><ExternalLink /> Kiosku Aç</a><button onClick={() => setDark((value) => !value)}>{dark ? <Sun /> : <Moon />}{dark ? 'Aydınlık Mod' : 'Karanlık Mod'}</button><span className="avatar">MC</span></div></header>
+    {mobileNav && <button type="button" className="mobile-nav-backdrop" onClick={() => setMobileNav(false)} aria-label="Menüyü kapat" />}
     <aside className={`sidebar ${mobileNav ? 'open' : ''}`}><div className="sidebar-title">Magic Coffee Panel</div><nav>{navGroups.map((group) => <section key={group.label}><small>{group.label}</small>{group.items.map((item) => <button className={activeView === item.key ? 'active' : ''} key={item.key} onClick={() => navigate(item.key)}><item.icon /><span>{item.label}</span><ChevronRight /></button>)}</section>)}</nav></aside>
     <main className="content"><div className="mobile-title">{viewTitle}</div>{activeView === 'dashboard' && <DashboardView data={dashboard} loading={loading} onRefresh={loadDashboard} onNavigate={navigate} />}{activeView === 'products' && <ProductsView products={products} categories={categories} loading={loading} onRefresh={refreshCore} onCreate={createProduct} onUpdate={updateProduct} onDelete={deleteProduct} />}{activeView === 'categories' && <CategoriesView categories={categories} loading={loading} onCreate={createCategory} onUpdate={updateCategory} onDelete={deleteCategory} onReorder={reorderCategories} />}{activeView === 'stock' && <StockView products={products} movements={movements} loading={loading} onRefresh={loadStock} onAdjust={adjustStock} onSettings={updateStockSettings} />}{activeView === 'orders' && <OrdersView orders={orders} loading={loading} onRefresh={loadOrders} />}{activeView === 'reports' && <ReportsView report={report} loading={loading} onLoad={loadReports} />}{activeView === 'pos-terminals' && <PosTerminalsView notify={notify} />}{activeView === 'settings' && <SettingsView apiOnline={apiOnline} dark={dark} onToggleDark={() => setDark((value) => !value)} />}</main>
     {message && <div className="toast"><Check />{message}</div>}
