@@ -32,7 +32,7 @@ export const api = {
   categories: () => request<Category[]>('/api/admin/categories'),
   createCategory: (payload: Partial<Category>) => request<Category>('/api/admin/categories', { method: 'POST', body: JSON.stringify(payload) }),
   updateCategory: (id: string, payload: Partial<Category>) => request<Category>(`/api/admin/categories/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  deleteCategory: (id: string) => request<void>(`/api/admin/categories/${id}`, { method: 'DELETE' }),
+  deleteCategory: (id: string, deleteProducts = false) => request<void>(`/api/admin/categories/${id}${deleteProducts ? '?deleteProducts=true' : ''}`, { method: 'DELETE' }),
   reorderCategories: (ids: string[]) => request('/api/admin/categories/reorder', { method: 'POST', body: JSON.stringify({ ids }) }),
   products: () => request<Product[]>('/api/admin/products'),
   createProduct: (payload: ProductDraft) => request<Product>('/api/admin/products', { method: 'POST', body: JSON.stringify(payload) }),
