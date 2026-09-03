@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MagicCoffee Panel</string>
+    <string name="title_activity_main">MagicCoffee Panel</string>
+    <string name="package_name">com.magicpay.magiccoffee.panel</string>
+    <string name="custom_url_scheme">com.magicpay.magiccoffee.panel</string>
+</resources>
