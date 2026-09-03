@@ -68,5 +68,6 @@ export function assetUrl(path?: string) {
   if (!path) return '';
   if (/^https?:\/\//.test(path)) return path;
   if (path.startsWith('/uploads/')) return apiUrl(path);
+  if (path.startsWith('/images/')) return path;
   return `${KIOSK_URL}${path}`;
 }
