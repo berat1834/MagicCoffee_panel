@@ -1,4 +1,38 @@
-export type ViewKey = 'dashboard' | 'products' | 'categories' | 'stock' | 'orders' | 'reports' | 'settings';
+export type ViewKey = 'dashboard' | 'products' | 'categories' | 'stock' | 'orders' | 'reports' | 'pos-terminals' | 'settings';
+
+export type PosProvider = 'PAVO_CLOUD' | 'PAVO_REST' | 'MAGICBOSS';
+export type PosStatus = 'ACTIVE' | 'PASSIVE' | 'MAINTENANCE';
+
+export type PosDevice = {
+  id: string;
+  name: string;
+  providerType: PosProvider;
+  serialNumber: string | null;
+  ipAddress: string | null;
+  port: number | null;
+  status: PosStatus;
+  isDefault: boolean;
+  cloudSourceFingerprint: string | null;
+  cloudPairingId: number | null;
+  paired: boolean;
+};
+
+export type PosDeviceDraft = {
+  name: string;
+  providerType: PosProvider;
+  serialNumber: string | null;
+  ipAddress: string | null;
+  port: number | null;
+  status: PosStatus;
+  isDefault: boolean;
+};
+
+export type PosPairing = {
+  success: boolean;
+  pairingId: number;
+  pairingCode: string;
+  message: string;
+};
 
 export type Category = {
   id: string;

@@ -1,4 +1,4 @@
-import type { AdminOrder, Category, Dashboard, Product, ProductDraft, Report, StockMovement } from './types';
+import type { AdminOrder, Category, Dashboard, PosDevice, PosDeviceDraft, PosPairing, Product, ProductDraft, Report, StockMovement } from './types';
 
 export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? 'https://magiccoffee-api.onrender.com').replace(/\/$/, '');
 export const KIOSK_URL = (import.meta.env.VITE_KIOSK_URL ?? 'http://127.0.0.1:5370').replace(/\/$/, '');
@@ -12,7 +12,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || 'İşlem tamamlanamadı.');
+    const detail = body.detail;
+    const message = typeof detail === 'string' ? detail : detail?.message || detail?.Message;
+    throw new Error(message || 'İşlem tamamlanamadı.');
   }
   return response.json() as Promise<T>;
 }
@@ -53,6 +55,13 @@ export const api = {
   stockMovements: () => request<StockMovement[]>('/api/admin/stock/movements'),
   orders: () => request<AdminOrder[]>('/api/admin/orders'),
   reports: (start: string, end: string) => request<Report>(`/api/admin/reports?start=${start}&end=${end}`),
+  posDevices: () => request<PosDevice[]>('/api/admin/pos/devices'),
+  refreshPosDeviceStatus: () => request<{ success: boolean }>('/api/admin/pos/devices/refresh-status', { method: 'POST' }),
+  createPosDevice: (payload: PosDeviceDraft) => request<PosDevice>('/api/admin/pos/devices', { method: 'POST', body: JSON.stringify(payload) }),
+  updatePosDevice: (id: string, payload: Partial<PosDeviceDraft>) => request<PosDevice>(`/api/admin/pos/devices/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deletePosDevice: (id: string) => request<void>(`/api/admin/pos/devices/${id}`, { method: 'DELETE' }),
+  pairPosDevice: (id: string, fingerprint: string) => request<PosPairing>(`/api/admin/pos/devices/${id}/pair`, { method: 'POST', body: JSON.stringify({ fingerprint }) }),
+  checkPosPairing: (id: string, pairingId: number) => request<{ approved: boolean; active: boolean; message?: string }>(`/api/admin/pos/devices/${id}/pair/check`, { method: 'POST', body: JSON.stringify({ pairingId }) }),
 };
 
 export function assetUrl(path?: string) {

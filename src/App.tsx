@@ -8,6 +8,8 @@
   Check,
   ChevronRight,
   ClipboardList,
+  Cloud,
+  CreditCard,
   Database,
   Edit3,
   ExternalLink,
@@ -24,6 +26,7 @@
   RefreshCcw,
   Search,
   Settings,
+  ShieldCheck,
   ShoppingBag,
   Sparkles,
   Sun,
@@ -34,7 +37,7 @@
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { API_BASE_URL, KIOSK_URL, api, assetUrl } from './api';
-import type { AdminOrder, Category, CustomizationOption, Dashboard, Product, ProductCustomization, ProductDraft, Report, StockMovement, ViewKey } from './types';
+import type { AdminOrder, Category, CustomizationOption, Dashboard, PosDevice, PosDeviceDraft, Product, ProductCustomization, ProductDraft, Report, StockMovement, ViewKey } from './types';
 
 const money = (value: number) => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL`;
 const dateTime = (value: string) => new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
@@ -46,7 +49,7 @@ const navGroups: Array<{ label: string; items: Array<{ key: ViewKey; label: stri
   { label: 'MENÜ VE FİYAT', items: [{ key: 'products', label: 'Menü Ürünleri', icon: ShoppingBag }, { key: 'categories', label: 'Kategoriler', icon: Tags }] },
   { label: 'STOK VE MUTFAK', items: [{ key: 'stock', label: 'Stok Yönetimi', icon: Boxes }] },
   { label: 'RAPORLAMA', items: [{ key: 'reports', label: 'Raporlar', icon: BarChart3 }] },
-  { label: 'SİSTEM', items: [{ key: 'settings', label: 'Ayarlar', icon: Settings }] },
+  { label: 'SİSTEM', items: [{ key: 'pos-terminals', label: 'POS Terminalleri', icon: CreditCard }, { key: 'settings', label: 'Ayarlar', icon: Settings }] },
 ];
 
 function Brand() {
@@ -392,6 +395,157 @@ function ReportsView({ report, loading, onLoad }: { report: Report | null; loadi
   </>;
 }
 
+const emptyPosDraft = (): PosDeviceDraft => ({
+  name: '', providerType: 'PAVO_CLOUD', serialNumber: '', ipAddress: null,
+  port: null, status: 'PASSIVE', isDefault: false,
+});
+
+function PosDeviceModal({ device, onClose, onSaved }: {
+  device: PosDevice | null;
+  onClose: () => void;
+  onSaved: (message: string) => void;
+}) {
+  const [draft, setDraft] = useState<PosDeviceDraft>(() => device ? {
+    name: device.name,
+    providerType: device.providerType,
+    serialNumber: device.serialNumber,
+    ipAddress: device.ipAddress,
+    port: device.port,
+    status: device.status,
+    isDefault: device.isDefault,
+  } : emptyPosDraft());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = <K extends keyof PosDeviceDraft>(key: K, value: PosDeviceDraft[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      if (device) await api.updatePosDevice(device.id, draft);
+      else await api.createPosDevice(draft);
+      onSaved(device ? 'POS terminali güncellendi.' : 'POS terminali eklendi.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Terminal kaydedilemedi.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <Modal title={device ? 'Terminali düzenle' : 'Yeni POS terminali'} subtitle="POS YÖNETİMİ" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>Vazgeç</button><button className="primary" type="submit" form="pos-device-form" disabled={saving}>{saving ? <Loader2 className="spin" /> : <Check />} Kaydet</button></>}>
+    <form id="pos-device-form" className="form-stack" onSubmit={submit}>
+      {error && <div className="form-error">{error}</div>}
+      <label><span>Terminal adı</span><input required value={draft.name} onChange={(event) => set('name', event.target.value)} placeholder="Ön Kasa POS" /></label>
+      <div className="pos-provider-card"><Cloud /><div><b>Pavo Cloud</b><small>Seri numarasıyla bulut üzerinden bağlanır</small></div><span>AKTİF ENTEGRASYON</span></div>
+      <label><span>Terminal seri numarası</span><input required value={draft.serialNumber ?? ''} onChange={(event) => set('serialNumber', event.target.value.toUpperCase())} placeholder="PAV960000010" /></label>
+      <label><span>Terminal durumu</span><select value={draft.status} onChange={(event) => set('status', event.target.value as PosDeviceDraft['status'])}><option value="ACTIVE">Aktif</option><option value="MAINTENANCE">Bakımda</option><option value="PASSIVE">Pasif</option></select></label>
+      <label className="switch-line"><span><b>Varsayılan terminal</b><small>Kiosk ödemeleri öncelikle bu cihaza gönderilir.</small></span><input type="checkbox" checked={draft.isDefault} onChange={(event) => set('isDefault', event.target.checked)} /></label>
+    </form>
+  </Modal>;
+}
+
+function PosPairModal({ device, onClose, onPaired }: {
+  device: PosDevice;
+  onClose: () => void;
+  onPaired: (message: string) => void;
+}) {
+  const [fingerprint, setFingerprint] = useState('');
+  const [pairing, setPairing] = useState<{ id: number; code: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const start = async () => {
+    if (!fingerprint.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.pairPosDevice(device.id, fingerprint);
+      if (!result.pairingId || !result.pairingCode) throw new Error(result.message || 'Eşleştirme kodu alınamadı.');
+      setPairing({ id: result.pairingId, code: result.pairingCode });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Eşleştirme başlatılamadı.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const check = useCallback(async (manual = false) => {
+    if (!pairing) return;
+    if (manual) setBusy(true);
+    if (manual) setError('');
+    try {
+      const result = await api.checkPosPairing(device.id, pairing.id);
+      if (result.approved) onPaired('Terminal başarıyla eşleştirildi ve aktif edildi.');
+      else if (manual) setError('Terminal onayı henüz gelmedi. POS ekranında kodu onaylayıp tekrar deneyin.');
+    } catch (reason) {
+      if (manual) setError(reason instanceof Error ? reason.message : 'Eşleştirme kontrol edilemedi.');
+    } finally {
+      if (manual) setBusy(false);
+    }
+  }, [device.id, onPaired, pairing]);
+  useEffect(() => {
+    if (!pairing) return;
+    let checking = false;
+    const timer = window.setInterval(async () => {
+      if (checking) return;
+      checking = true;
+      try { await check(false); } finally { checking = false; }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [check, pairing]);
+  return <Modal title="Cloud Eşleştirme" subtitle="PAVO CLOUD" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>{pairing ? 'İptal Et' : 'Vazgeç'}</button>{!pairing ? <button className="primary" onClick={start} disabled={busy || !fingerprint.trim()}>{busy ? <Loader2 className="spin" /> : <Cloud />} Eşleştir</button> : <button className="primary" onClick={() => { void check(true); }} disabled={busy}>{busy ? <Loader2 className="spin" /> : <RefreshCcw />} Şimdi Kontrol Et</button>}</>}>
+    <div className="pairing-content"><Cloud /><div className="pairing-device"><Cloud /><span><b>{device.name}</b><small>{device.serialNumber}</small></span><strong>PAVO CLOUD</strong></div>{pairing ? <><h3>POS Onayı Bekleniyor</h3><p>Aşağıdaki 6 haneli kodu POS cihazındaki ilgili alana girip onaylayın:</p><strong className="pairing-code">{pairing.code}</strong><small><Loader2 className="spin" /> Cihaz onayı her 3 saniyede kontrol ediliyor...</small></> : <><h3>Cloud Eşleştirme</h3><p>MagicCoffee uygulamasını tanımlayan benzersiz bir fingerprint girin.</p><label className="pairing-input"><span>Parmak İzi (Fingerprint)</span><input value={fingerprint} onChange={(event) => setFingerprint(event.target.value)} placeholder="örn: magiccoffee-pos-001" autoFocus /><small>Yazdığınız değer değiştirilmeden Pavo Cloud'a gönderilir.</small></label></>}{error && <div className="form-error">{error}</div>}</div>
+  </Modal>;
+}
+
+function PosTerminalsView({ notify }: { notify: (message: string) => void }) {
+  const [devices, setDevices] = useState<PosDevice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editor, setEditor] = useState<PosDevice | 'new' | null>(null);
+  const [pairing, setPairing] = useState<PosDevice | null>(null);
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setDevices(await api.posDevices());
+      try {
+        await api.refreshPosDeviceStatus();
+        setDevices(await api.posDevices());
+      } catch {
+        // Keep the last valid pairing information during a temporary cloud outage.
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Terminaller yüklenemedi.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const saved = useCallback(async (message: string) => {
+    setEditor(null);
+    setPairing(null);
+    await load();
+    notify(message);
+  }, [load, notify]);
+  const remove = async (device: PosDevice) => {
+    if (!window.confirm(`${device.name} terminali silinsin mi?`)) return;
+    try {
+      await api.deletePosDevice(device.id);
+      await load();
+      notify('POS terminali silindi.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Terminal silinemedi.');
+    }
+  };
+  return <><PageHeader eyebrow="SİSTEM" title="POS terminalleri" description="Kioskun ödeme göndereceği Pavo terminallerini ekle, eşleştir ve çalışma durumlarını yönet." actions={<><button className="secondary" onClick={() => { void load(); }}><RefreshCcw /> Yenile</button><button className="primary" onClick={() => setEditor('new')}><Plus /> Yeni Terminal</button></>} />
+    <div className="pos-stats"><article><CreditCard /><div><small>TOPLAM TERMİNAL</small><b>{devices.length}</b></div></article><article><Activity /><div><small>AKTİF</small><b>{devices.filter((item) => item.status === 'ACTIVE').length}</b></div></article><article><ShieldCheck /><div><small>EŞLEŞMİŞ</small><b>{devices.filter((item) => item.paired).length}</b></div></article></div>
+    {error && <div className="form-error pos-page-error">{error}</div>}
+    <section className="table-card">{loading ? <Loading /> : !devices.length ? <Empty title="POS terminali bulunamadı" text="İlk Pavo terminalini ekleyerek ödeme bağlantısını kurun." /> : <div className="table-wrap"><table className="pos-table"><thead><tr><th>Terminal</th><th>Sağlayıcı</th><th>Seri No</th><th>Eşleşme</th><th>Durum</th><th>Ödeme</th><th /></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><div className="terminal-cell"><span><CreditCard /></span><div><b>{device.name}</b><small>{device.isDefault ? 'Varsayılan terminal' : 'POS terminali'}</small></div></div></td><td><span className="tag">Pavo Cloud</span></td><td><code>{device.serialNumber || '-'}</code></td><td><span className={`pair-status ${device.paired ? 'paired' : ''}`}>{device.paired ? <><ShieldCheck /> Eşleşti</> : 'Eşleşmedi'}</span></td><td><span className={`status ${device.status === 'ACTIVE' ? 'active' : ''}`}>{device.status === 'ACTIVE' ? 'Aktif' : device.status === 'MAINTENANCE' ? 'Bakımda' : 'Pasif'}</span></td><td>{device.isDefault ? <span className="default-terminal">Varsayılan</span> : <span className="muted">Yedek</span>}</td><td><div className="row-actions"><button className="cloud-action" title={device.paired ? 'Cloud eşleştirmeyi yenile' : 'Cloud eşleştir'} onClick={() => setPairing(device)}><Cloud /></button><button title="Düzenle" onClick={() => setEditor(device)}><Edit3 /></button><button className="danger" title="Sil" onClick={() => { void remove(device); }}><Trash2 /></button></div></td></tr>)}</tbody></table></div>}</section>
+    {editor && <PosDeviceModal device={editor === 'new' ? null : editor} onClose={() => setEditor(null)} onSaved={saved} />}
+    {pairing && <PosPairModal device={pairing} onClose={() => setPairing(null)} onPaired={saved} />}
+  </>;
+}
+
 function SettingsView({ apiOnline, dark, onToggleDark }: { apiOnline: boolean; dark: boolean; onToggleDark: () => void }) {
   const backendLabel = API_BASE_URL || 'Yerel proxy';
   return <><PageHeader eyebrow="SİSTEM" title="Panel ayarları" description="Magic Coffee yönetim ortamının temel bağlantılarını ve görünümünü kontrol et." />
@@ -415,7 +569,7 @@ export default function App() {
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [report, setReport] = useState<Report | null>(null);
 
-  const notify = (value: string) => { setMessage(value); window.setTimeout(() => setMessage(''), 2800); };
+  const notify = useCallback((value: string) => { setMessage(value); window.setTimeout(() => setMessage(''), 2800); }, []);
   const loadCore = useCallback(async () => { setLoading(true); try { const [health, categoryData, productData] = await Promise.all([api.health(), api.categories(), api.products()]); setApiOnline(health.status === 'ok'); setCategories(categoryData); setProducts(productData); } catch { setApiOnline(false); } finally { setLoading(false); } }, []);
   const loadDashboard = useCallback(async () => { setLoading(true); try { setDashboard(await api.dashboard()); } finally { setLoading(false); } }, []);
   const loadStock = useCallback(async () => { setLoading(true); try { const [stock, history] = await Promise.all([api.stock(), api.stockMovements()]); setProducts(stock); setMovements(history); } finally { setLoading(false); } }, []);
@@ -438,7 +592,7 @@ export default function App() {
   return <div className="app">
     <header className="topbar"><button className="mobile-menu" onClick={() => setMobileNav((value) => !value)}><MenuIcon /></button><Brand /><div className="top-actions"><span className={`api-pill ${apiOnline ? 'online' : ''}`}><Activity /> Backend: {apiOnline ? 'online' : 'offline'}</span><a href={KIOSK_URL} target="_blank" rel="noreferrer"><ExternalLink /> Kiosku Aç</a><button onClick={() => setDark((value) => !value)}>{dark ? <Sun /> : <Moon />}{dark ? 'Aydınlık Mod' : 'Karanlık Mod'}</button><span className="avatar">MC</span></div></header>
     <aside className={`sidebar ${mobileNav ? 'open' : ''}`}><div className="sidebar-title">Magic Coffee Panel</div><nav>{navGroups.map((group) => <section key={group.label}><small>{group.label}</small>{group.items.map((item) => <button className={activeView === item.key ? 'active' : ''} key={item.key} onClick={() => navigate(item.key)}><item.icon /><span>{item.label}</span><ChevronRight /></button>)}</section>)}</nav></aside>
-    <main className="content"><div className="mobile-title">{viewTitle}</div>{activeView === 'dashboard' && <DashboardView data={dashboard} loading={loading} onRefresh={loadDashboard} onNavigate={navigate} />}{activeView === 'products' && <ProductsView products={products} categories={categories} loading={loading} onRefresh={refreshCore} onCreate={createProduct} onUpdate={updateProduct} onDelete={deleteProduct} />}{activeView === 'categories' && <CategoriesView categories={categories} loading={loading} onCreate={createCategory} onUpdate={updateCategory} onDelete={deleteCategory} onReorder={reorderCategories} />}{activeView === 'stock' && <StockView products={products} movements={movements} loading={loading} onRefresh={loadStock} onAdjust={adjustStock} onSettings={updateStockSettings} />}{activeView === 'orders' && <OrdersView orders={orders} loading={loading} onRefresh={loadOrders} />}{activeView === 'reports' && <ReportsView report={report} loading={loading} onLoad={loadReports} />}{activeView === 'settings' && <SettingsView apiOnline={apiOnline} dark={dark} onToggleDark={() => setDark((value) => !value)} />}</main>
+    <main className="content"><div className="mobile-title">{viewTitle}</div>{activeView === 'dashboard' && <DashboardView data={dashboard} loading={loading} onRefresh={loadDashboard} onNavigate={navigate} />}{activeView === 'products' && <ProductsView products={products} categories={categories} loading={loading} onRefresh={refreshCore} onCreate={createProduct} onUpdate={updateProduct} onDelete={deleteProduct} />}{activeView === 'categories' && <CategoriesView categories={categories} loading={loading} onCreate={createCategory} onUpdate={updateCategory} onDelete={deleteCategory} onReorder={reorderCategories} />}{activeView === 'stock' && <StockView products={products} movements={movements} loading={loading} onRefresh={loadStock} onAdjust={adjustStock} onSettings={updateStockSettings} />}{activeView === 'orders' && <OrdersView orders={orders} loading={loading} onRefresh={loadOrders} />}{activeView === 'reports' && <ReportsView report={report} loading={loading} onLoad={loadReports} />}{activeView === 'pos-terminals' && <PosTerminalsView notify={notify} />}{activeView === 'settings' && <SettingsView apiOnline={apiOnline} dark={dark} onToggleDark={() => setDark((value) => !value)} />}</main>
     {message && <div className="toast"><Check />{message}</div>}
   </div>;
 }

@@ -35,3 +35,5 @@ npm run build
 - Stok takibi ve satır üzerinden stok işlemleri
 - Kiosk satış durumunu açma/kapatma
 - Sipariş ve satış raporları
+- Pavo Cloud POS terminali ekleme, düzenleme, silme, durum ve varsayılan terminal yönetimi
+- Kullanıcı fingerprint değeriyle eşleştirme ve 3 saniyelik otomatik durum kontrolü
