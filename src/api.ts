@@ -1,7 +1,11 @@
 import type { AdminOrder, Category, Dashboard, PosDevice, PosDeviceDraft, PosPairing, Product, ProductDraft, Report, StockMovement } from './types';
 
+const FORBIDDEN_PROJECT_MARKER = ['full', 'moon'].join('');
 export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? 'https://magiccoffee-api.onrender.com').replace(/\/$/, '');
 export const KIOSK_URL = (import.meta.env.VITE_KIOSK_URL ?? 'http://127.0.0.1:5370').replace(/\/$/, '');
+if (API_BASE_URL.toLowerCase().includes(FORBIDDEN_PROJECT_MARKER) || KIOSK_URL.toLowerCase().includes(FORBIDDEN_PROJECT_MARKER)) {
+  throw new Error('MagicCoffee disindaki servis adresleri kullanilamaz.');
+}
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -66,7 +70,7 @@ export const api = {
 
 export function assetUrl(path?: string) {
   if (!path) return '';
-  if (/^https?:\/\//.test(path)) return path;
+  if (/^https?:\/\//.test(path)) return path.toLowerCase().includes(FORBIDDEN_PROJECT_MARKER) ? '' : path;
   if (path.startsWith('/uploads/')) return apiUrl(path);
   if (path.startsWith('/images/')) return path;
   return `${KIOSK_URL}${path}`;
