@@ -484,7 +484,7 @@ function PosDeviceModal({ device, onClose, onSaved }: {
       {error && <div className="form-error">{error}</div>}
       <label><span>Terminal adı</span><input required value={draft.name} onChange={(event) => set('name', event.target.value)} placeholder="Ön Kasa POS" /></label>
       <div className="pos-provider-card"><Cloud /><div><b>Pavo Cloud</b><small>Seri numarasıyla bulut üzerinden bağlanır</small></div><span>AKTİF ENTEGRASYON</span></div>
-      <label><span>Terminal seri numarası</span><input required value={draft.serialNumber ?? ''} onChange={(event) => set('serialNumber', event.target.value.toUpperCase())} placeholder="PAV960000010" /></label>
+      <label><span>Terminal seri numarası</span><input required value={draft.serialNumber ?? ''} onChange={(event) => set('serialNumber', event.target.value.toUpperCase())} placeholder="COFFEE-POS-SERIAL" /></label>
       <label><span>Terminal durumu</span><select value={draft.status} onChange={(event) => set('status', event.target.value as PosDeviceDraft['status'])}><option value="ACTIVE">Aktif</option><option value="MAINTENANCE">Bakımda</option><option value="PASSIVE">Pasif</option></select></label>
       <label className="switch-line"><span><b>Varsayılan terminal</b><small>Kiosk ödemeleri öncelikle bu cihaza gönderilir.</small></span><input type="checkbox" checked={draft.isDefault} onChange={(event) => set('isDefault', event.target.checked)} /></label>
     </form>
