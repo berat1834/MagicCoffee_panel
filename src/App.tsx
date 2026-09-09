@@ -442,7 +442,7 @@ function ReportsView({ report, loading, onLoad }: { report: Report | null; loadi
 }
 
 const emptyPosDraft = (): PosDeviceDraft => ({
-  name: '', providerType: 'PAVO_UNICLOUD', serialNumber: 'PAV960000010', ipAddress: null,
+  name: '', providerType: 'PAVO_CLOUD', serialNumber: 'PAV960000010', ipAddress: null,
   port: null, status: 'ACTIVE', isDefault: true,
 });
 
@@ -483,7 +483,7 @@ function PosDeviceModal({ device, onClose, onSaved }: {
     <form id="pos-device-form" className="form-stack" onSubmit={submit}>
       {error && <div className="form-error">{error}</div>}
       <label><span>Terminal adı</span><input required value={draft.name} onChange={(event) => set('name', event.target.value)} placeholder="Ön Kasa POS" /></label>
-      <div className="pos-provider-card"><Cloud /><div><b>Pavo Unicloud</b><small>Kebo ödeme backend'i üzerinden bağlanır</small></div><span>AKTİF ENTEGRASYON</span></div>
+      <div className="pos-provider-card"><Cloud /><div><b>Pavo Cloud</b><small>Kebo ödeme backend'i üzerinden bağlanır</small></div><span>AKTİF ENTEGRASYON</span></div>
       <label><span>Terminal seri numarası</span><input required readOnly value={draft.serialNumber ?? ''} /></label>
       <label><span>Terminal durumu</span><select value={draft.status} onChange={(event) => set('status', event.target.value as PosDeviceDraft['status'])}><option value="ACTIVE">Aktif</option><option value="MAINTENANCE">Bakımda</option><option value="PASSIVE">Pasif</option></select></label>
       <label className="switch-line"><span><b>Tanımlı ödeme terminali</b><small>Kiosk ödemeleri yalnızca bu cihazla çalışır.</small></span><input type="checkbox" checked={draft.isDefault} disabled /></label>
@@ -496,7 +496,7 @@ function PosPairModal({ device, onClose, onPaired }: {
   onClose: () => void;
   onPaired: (message: string) => void;
 }) {
-  const [fingerprint] = useState('test1');
+  const [fingerprint] = useState('TEST');
   const [pairing, setPairing] = useState<{ id: number; code: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -538,28 +538,20 @@ function PosPairModal({ device, onClose, onPaired }: {
     }, 3000);
     return () => window.clearInterval(timer);
   }, [check, pairing]);
-  return <Modal title="Unicloud Eşleştirme" subtitle="PAVO UNICLOUD" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>{pairing ? 'İptal Et' : 'Vazgeç'}</button>{!pairing ? <button className="primary" onClick={start} disabled={busy}>{busy ? <Loader2 className="spin" /> : <Cloud />} Eşleştir</button> : <button className="primary" onClick={() => { void check(true); }} disabled={busy}>{busy ? <Loader2 className="spin" /> : <RefreshCcw />} Şimdi Kontrol Et</button>}</>}>
-    <div className="pairing-content"><Cloud /><div className="pairing-device"><Cloud /><span><b>{device.name}</b><small>{device.serialNumber}</small></span><strong>PAVO UNICLOUD</strong></div>{pairing ? <><h3>POS Onayı Bekleniyor</h3><p>Aşağıdaki 6 haneli kodu POS cihazındaki ilgili alana girip onaylayın:</p><strong className="pairing-code">{pairing.code}</strong><small><Loader2 className="spin" /> Cihaz onayı her 3 saniyede kontrol ediliyor...</small></> : <><h3>Unicloud Eşleştirme</h3><p>MagicCoffee için tanımlı source fingerprint kullanılır.</p><label className="pairing-input"><span>Source fingerprint</span><input value={fingerprint} readOnly /><small>Bu kimlik yalnızca MagicCoffee ödeme akışına aittir.</small></label></>}{error && <div className="form-error">{error}</div>}</div>
+  return <Modal title="Cloud Eşleştirme" subtitle="PAVO CLOUD" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>{pairing ? 'İptal Et' : 'Vazgeç'}</button>{!pairing ? <button className="primary" onClick={start} disabled={busy}>{busy ? <Loader2 className="spin" /> : <Cloud />} Eşleştir</button> : <button className="primary" onClick={() => { void check(true); }} disabled={busy}>{busy ? <Loader2 className="spin" /> : <RefreshCcw />} Şimdi Kontrol Et</button>}</>}>
+    <div className="pairing-content"><Cloud /><div className="pairing-device"><Cloud /><span><b>{device.name}</b><small>{device.serialNumber}</small></span><strong>PAVO CLOUD</strong></div>{pairing ? <><h3>POS Onayı Bekleniyor</h3><p>Aşağıdaki 6 haneli kodu POS cihazındaki ilgili alana girip onaylayın:</p><strong className="pairing-code">{pairing.code}</strong><small><Loader2 className="spin" /> Cihaz onayı her 3 saniyede kontrol ediliyor...</small></> : <><h3>Cloud Eşleştirme</h3><p>MagicCoffee için tanımlı source fingerprint kullanılır.</p><label className="pairing-input"><span>Source fingerprint</span><input value={fingerprint} readOnly /><small>Bu kimlik yalnızca MagicCoffee ödeme akışına aittir.</small></label></>}{error && <div className="form-error">{error}</div>}</div>
   </Modal>;
 }
 
 function PosTerminalsView({ notify }: { notify: (message: string) => void }) {
   const [devices, setDevices] = useState<PosDevice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editor, setEditor] = useState<PosDevice | 'new' | null>(null);
-  const [pairing, setPairing] = useState<PosDevice | null>(null);
   const [error, setError] = useState('');
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       setDevices(await api.posDevices());
-      try {
-        await api.refreshPosDeviceStatus();
-        setDevices(await api.posDevices());
-      } catch {
-        // Keep the last valid pairing information during a temporary cloud outage.
-      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Terminaller yüklenemedi.');
     } finally {
@@ -567,28 +559,11 @@ function PosTerminalsView({ notify }: { notify: (message: string) => void }) {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  const saved = useCallback(async (message: string) => {
-    setEditor(null);
-    setPairing(null);
-    await load();
-    notify(message);
-  }, [load, notify]);
-  const remove = async (device: PosDevice) => {
-    if (!window.confirm(`${device.name} terminali silinsin mi?`)) return;
-    try {
-      await api.deletePosDevice(device.id);
-      await load();
-      notify('POS terminali silindi.');
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Terminal silinemedi.');
-    }
-  };
-  return <><PageHeader eyebrow="SİSTEM" title="POS terminalleri" description="Kioskun ödeme göndereceği Pavo terminallerini ekle, eşleştir ve çalışma durumlarını yönet." actions={<><button className="secondary" onClick={() => { void load(); }}><RefreshCcw /> Yenile</button><button className="primary" onClick={() => setEditor('new')}><Plus /> Yeni Terminal</button></>} />
+  const reload = async () => { await load(); notify('Terminal bilgisi yenilendi.'); };
+  return <><PageHeader eyebrow="SİSTEM" title="POS terminali" description="Kioskun ödeme göndereceği mevcut Kebo Pavo Cloud terminalini görüntüle." actions={<button className="secondary" onClick={() => { void reload(); }}><RefreshCcw /> Yenile</button>} />
     <div className="pos-stats"><article><CreditCard /><div><small>TOPLAM TERMİNAL</small><b>{devices.length}</b></div></article><article><Activity /><div><small>AKTİF</small><b>{devices.filter((item) => item.status === 'ACTIVE').length}</b></div></article><article><ShieldCheck /><div><small>EŞLEŞMİŞ</small><b>{devices.filter((item) => item.paired).length}</b></div></article></div>
     {error && <div className="form-error pos-page-error">{error}</div>}
-    <section className="table-card">{loading ? <Loading /> : !devices.length ? <Empty title="POS terminali bulunamadı" text="Tanımlı Kebo Unicloud terminali şu anda alınamıyor." /> : <div className="table-wrap"><table className="pos-table"><thead><tr><th>Terminal</th><th>Sağlayıcı</th><th>Seri No</th><th>Eşleşme</th><th>Durum</th><th>Ödeme</th><th /></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><div className="terminal-cell"><span><CreditCard /></span><div><b>{device.name}</b><small>{device.isDefault ? 'Tanımlı terminal' : 'POS terminali'}</small></div></div></td><td><span className="tag">Pavo Unicloud</span></td><td><code>{device.serialNumber || '-'}</code></td><td><span className={`pair-status ${device.paired ? 'paired' : ''}`}>{device.paired ? <><ShieldCheck /> Eşleşti</> : 'Eşleşmedi'}</span></td><td><span className={`status ${device.status === 'ACTIVE' ? 'active' : ''}`}>{device.status === 'ACTIVE' ? 'Aktif' : device.status === 'MAINTENANCE' ? 'Bakımda' : 'Pasif'}</span></td><td>{device.isDefault ? <span className="default-terminal">Tanımlı</span> : <span className="muted">Kapalı</span>}</td><td><div className="row-actions"><button className="cloud-action" title={device.paired ? 'Unicloud eşleştirmeyi yenile' : 'Unicloud eşleştir'} onClick={() => setPairing(device)}><Cloud /></button><button title="Düzenle" onClick={() => setEditor(device)}><Edit3 /></button><button className="danger" title="Sil" onClick={() => { void remove(device); }}><Trash2 /></button></div></td></tr>)}</tbody></table></div>}</section>
-    {editor && <PosDeviceModal device={editor === 'new' ? null : editor} onClose={() => setEditor(null)} onSaved={saved} />}
-    {pairing && <PosPairModal device={pairing} onClose={() => setPairing(null)} onPaired={saved} />}
+    <section className="table-card">{loading ? <Loading /> : !devices.length ? <Empty title="POS terminali bulunamadı" text="Tanımlı Kebo Pavo Cloud terminali şu anda alınamıyor." /> : <div className="table-wrap"><table className="pos-table"><thead><tr><th>Terminal</th><th>Sağlayıcı</th><th>Seri No</th><th>Eşleşme</th><th>Durum</th><th>Ödeme</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><div className="terminal-cell"><span><CreditCard /></span><div><b>{device.name}</b><small>Tanımlı terminal</small></div></div></td><td><span className="tag">Pavo Cloud</span></td><td><code>{device.serialNumber || '-'}</code></td><td><span className={`pair-status ${device.paired ? 'paired' : ''}`}>{device.paired ? <><ShieldCheck /> Eşleşti</> : 'Eşleşmedi'}</span></td><td><span className={`status ${device.status === 'ACTIVE' ? 'active' : ''}`}>{device.status === 'ACTIVE' ? 'Aktif' : device.status === 'MAINTENANCE' ? 'Bakımda' : 'Pasif'}</span></td><td>{device.status === 'ACTIVE' && device.paired ? <span className="default-terminal">Hazır</span> : <span className="muted">Kapalı</span>}</td></tr>)}</tbody></table></div>}</section>
   </>;
 }
 
