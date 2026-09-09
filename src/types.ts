@@ -1,6 +1,6 @@
 export type ViewKey = 'dashboard' | 'products' | 'categories' | 'stock' | 'orders' | 'reports' | 'pos-terminals' | 'settings';
 
-export type PosProvider = 'PAVO_CLOUD' | 'PAVO_REST' | 'MAGICBOSS';
+export type PosProvider = 'PAVO_UNICLOUD';
 export type PosStatus = 'ACTIVE' | 'PASSIVE' | 'MAINTENANCE';
 
 export type PosDevice = {
