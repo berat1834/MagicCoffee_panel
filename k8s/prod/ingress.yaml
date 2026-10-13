@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: magiccoffee-panel
+  namespace: magiccoffee
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns01
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/hsts: "true"
+    nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/proxy-body-size: "8m"
+    # Panel şifreyle korunur; kullanıcı/şifre magiccoffee-panel-auth secret'ında (htpasswd) tutulur.
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: magiccoffee-panel-auth
+    nginx.ingress.kubernetes.io/auth-realm: "Magic Coffee Panel"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - magiccoffee-panel.magicpay.ai
+      secretName: magiccoffee-panel-tls
+  rules:
+    - host: magiccoffee-panel.magicpay.ai
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: magiccoffee-panel
+                port:
+                  number: 80
