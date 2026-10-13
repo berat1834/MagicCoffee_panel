@@ -1,4 +1,4 @@
-﻿import {
+import {
   Activity,
   AlertTriangle,
   ArrowDown,
@@ -8,107 +8,131 @@
   Check,
   ChevronRight,
   ClipboardList,
-  Cloud,
   CreditCard,
   Database,
   Edit3,
-  ExternalLink,
   Eye,
-  EyeOff,
+  Filter,
+  FolderTree,
   ImagePlus,
   LayoutDashboard,
+  LayoutGrid,
   Loader2,
   Menu as MenuIcon,
   Minus,
+  MonitorSmartphone,
   Moon,
-  PackagePlus,
   Plus,
   RefreshCcw,
   Search,
   Settings,
-  ShieldCheck,
   ShoppingBag,
   Sparkles,
   Sun,
   Tags,
   Trash2,
-  TrendingUp,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { API_BASE_URL, KIOSK_URL, api, assetUrl } from './api';
-import type { AdminOrder, Category, CustomizationOption, Dashboard, PosDevice, PosDeviceDraft, Product, ProductCustomization, ProductDraft, Report, StockMovement, ViewKey } from './types';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { API_BASE_URL, api, assetUrl } from './api';
+import { SectionChip, SectionIcon, accentStyle } from './sections';
+import type {
+  AdminOrder,
+  CastlesDevice,
+  CastlesDeviceDraft,
+  Category,
+  CustomizationOption,
+  Dashboard,
+  DashboardSectionRow,
+  Filters,
+  Kiosk,
+  KioskUpdate,
+  Product,
+  ProductCustomization,
+  ProductDraft,
+  Report,
+  Section,
+  SectionDraft,
+  StockMovement,
+  ViewKey,
+} from './types';
+import { Empty, ErrorBanner, Modal, PageHeader, Skeleton, dateTime, daysAgo, money, today } from './ui';
+import { DashboardView, filterLabel } from './views/DashboardView';
+import { DevicesView } from './views/DevicesView';
+import { KiosksView } from './views/KiosksView';
+import { SectionsView } from './views/SectionsView';
 
-const money = (value: number) => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL`;
-const dateTime = (value: string) => new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
-const today = () => new Date().toISOString().slice(0, 10);
-const daysAgo = (days: number) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-
-const navGroups: Array<{ label: string; items: Array<{ key: ViewKey; label: string; icon: typeof LayoutDashboard }> }> = [
-  { label: 'OPERASYON', items: [{ key: 'dashboard', label: 'Operasyon Özeti', icon: LayoutDashboard }, { key: 'orders', label: 'Siparişler', icon: ClipboardList }] },
-  { label: 'MENÜ VE FİYAT', items: [{ key: 'products', label: 'Menü Ürünleri', icon: ShoppingBag }, { key: 'categories', label: 'Kategoriler', icon: Tags }] },
-  { label: 'STOK VE MUTFAK', items: [{ key: 'stock', label: 'Stok Yönetimi', icon: Boxes }] },
-  { label: 'RAPORLAMA', items: [{ key: 'reports', label: 'Raporlar', icon: BarChart3 }] },
-  { label: 'SİSTEM', items: [{ key: 'pos-terminals', label: 'POS Terminalleri', icon: CreditCard }, { key: 'settings', label: 'Ayarlar', icon: Settings }] },
+type NavItem = { key: ViewKey; label: string; icon: typeof LayoutDashboard };
+const navGroups: Array<{ label: string; items: NavItem[] }> = [
+  { label: 'GENEL', items: [{ key: 'dashboard', label: 'Gösterge Paneli', icon: LayoutDashboard }, { key: 'kiosks', label: 'Kiosklar', icon: MonitorSmartphone }] },
+  { label: 'KATALOG', items: [{ key: 'sections', label: 'Kategoriler', icon: LayoutGrid }, { key: 'categories', label: 'Alt Kategoriler', icon: FolderTree }, { key: 'products', label: 'Ürünler', icon: ShoppingBag }, { key: 'stock', label: 'Stok', icon: Boxes }] },
+  { label: 'SATIŞ', items: [{ key: 'orders', label: 'Siparişler', icon: ClipboardList }, { key: 'reports', label: 'Raporlar', icon: BarChart3 }] },
+  { label: 'SİSTEM', items: [{ key: 'pos-devices', label: 'POS Cihazları', icon: CreditCard }, { key: 'settings', label: 'Ayarlar', icon: Settings }] },
 ];
+const VIEW_KEYS = navGroups.flatMap((group) => group.items.map((item) => item.key));
+
+/** Hangi sayfada hangi global filtre geçerli. */
+const FILTER_SCOPE: Partial<Record<ViewKey, { kiosk: boolean; section: boolean }>> = {
+  dashboard: { kiosk: true, section: true },
+  orders: { kiosk: true, section: true },
+  reports: { kiosk: true, section: true },
+  products: { kiosk: false, section: true },
+  categories: { kiosk: false, section: true },
+  stock: { kiosk: false, section: true },
+};
+
+const FILTER_STORAGE_KEY = 'mk-panel-filters';
+const VIEW_STORAGE_KEY = 'mk-panel-view';
+const readFilters = (): Filters => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || '{}');
+    return { kiosk: typeof parsed.kiosk === 'string' ? parsed.kiosk : '', section: typeof parsed.section === 'string' ? parsed.section : '' };
+  } catch { return { kiosk: '', section: '' }; }
+};
+const readView = (): ViewKey => {
+  const stored = localStorage.getItem(VIEW_STORAGE_KEY) as ViewKey | null;
+  return stored && VIEW_KEYS.includes(stored) ? stored : 'dashboard';
+};
 
 function Brand() {
-  return <div className="brand"><span><CoffeeLogoIcon /></span><div><small>MAGIC COFFEE</small><b>Operasyon Paneli</b></div></div>;
+  return <div className="brand"><span><KioskLogoIcon /></span><div><small>MAGICPAY</small><b>Kiosk Yönetimi</b></div></div>;
 }
 
-function CoffeeLogoIcon() {
+function KioskLogoIcon() {
   return <svg viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 22h28v18c0 8-6 14-14 14s-14-6-14-14V22Z" fill="currentColor" fillOpacity=".12" />
-    <path d="M46 27h3c4 0 7 3 7 7s-3 7-7 7h-3" />
-    <path d="M23 12c-2 3 2 4 0 7m9-7c-2 3 2 4 0 7m9-7c-2 3 2 4 0 7" />
-    <path d="M15 56h34" />
+    <rect x="17" y="8" width="30" height="40" rx="5" fill="currentColor" fillOpacity=".12" />
+    <path d="M23 16h18M23 24h8m4 0h6M23 32h8m4 0h6" />
+    <path d="M26 48v8m12-8v8M20 56h24" />
   </svg>;
 }
 
-function Modal({ title, subtitle, onClose, children, footer, wide = false }: { title: string; subtitle?: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section className={`modal ${wide ? 'modal--wide' : ''}`}>
-      <header><div><small>{subtitle}</small><h2>{title}</h2></div><button className="icon-button" onClick={onClose}><X /></button></header>
-      <div className="modal__body">{children}</div>
-      {footer && <footer>{footer}</footer>}
-    </section>
+function FilterBar({ view, filters, kiosks, sections, onChange }: { view: ViewKey; filters: Filters; kiosks: Kiosk[]; sections: Section[]; onChange: (patch: Partial<Filters>) => void }) {
+  const scope = FILTER_SCOPE[view];
+  if (!scope) return null;
+  const section = sections.find((item) => item.id === filters.section);
+  const active = (scope.kiosk && filters.kiosk) || (scope.section && filters.section);
+  return <div className="filter-bar" style={accentStyle(section?.accent)}>
+    <span className="filter-bar__label"><Filter /> Filtre</span>
+    <label className={scope.kiosk ? '' : 'is-disabled'} title={scope.kiosk ? '' : 'Bu sayfada kiosk filtresi uygulanmaz'}>
+      <MonitorSmartphone />
+      <select value={filters.kiosk} disabled={!scope.kiosk} onChange={(event) => onChange({ kiosk: event.target.value })} aria-label="Kiosk filtresi">
+        <option value="">Tüm kiosklar</option>
+        {kiosks.map((kiosk) => <option key={kiosk.id} value={kiosk.id}>{kiosk.id.toUpperCase()} · {kiosk.name}</option>)}
+      </select>
+    </label>
+    <label className={`${scope.section ? '' : 'is-disabled'} ${section ? 'has-section' : ''}`}>
+      {section ? <SectionIcon name={section.icon} /> : <LayoutGrid />}
+      <select value={filters.section} disabled={!scope.section} onChange={(event) => onChange({ section: event.target.value })} aria-label="Kategori filtresi">
+        <option value="">Tüm kategoriler</option>
+        {sections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+    </label>
+    {active ? <button className="text-button" onClick={() => onChange(scope.kiosk ? { kiosk: '', section: '' } : { section: '' })}><X /> Temizle</button> : null}
+    {!scope.kiosk && <small className="filter-bar__hint">Bu sayfada yalnız kategori filtresi geçerli</small>}
   </div>;
 }
 
-function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) {
-  return <header className="page-header"><div><small>{eyebrow}</small><h1>{title}</h1><p>{description}</p></div>{actions && <div className="page-actions">{actions}</div>}</header>;
-}
-
-function Loading() { return <div className="state-card"><Loader2 className="spin" /><b>Veriler hazırlanıyor</b><span>Lütfen kısa bir süre bekleyin.</span></div>; }
-function Empty({ title, text }: { title: string; text: string }) { return <div className="empty"><PackagePlus /><b>{title}</b><span>{text}</span></div>; }
-
-function DashboardView({ data, loading, onRefresh, onNavigate }: { data: Dashboard | null; loading: boolean; onRefresh: () => void; onNavigate: (view: ViewKey) => void }) {
-  if (loading && !data) return <Loading />;
-  const stats = data?.stats;
-  const cards = [
-    { label: 'AKTİF ÜRÜN', value: stats?.active_product_count ?? 0, note: `${stats?.product_count ?? 0} toplam ürün`, icon: ShoppingBag },
-    { label: 'KATEGORİ', value: stats?.category_count ?? 0, note: 'Kiosk menüsünde', icon: Tags },
-    { label: 'BUGÜNKÜ SİPARİŞ', value: stats?.today_order_count ?? 0, note: 'Bugün alınan işlem', icon: ClipboardList },
-    { label: 'BUGÜNKÜ CİRO', value: money(stats?.today_revenue ?? 0), note: 'Güncel toplam', icon: TrendingUp, featured: true },
-  ];
-  return <>
-    <PageHeader eyebrow="OPERASYON" title="Hoş geldin, Magic Coffee" description="Kiosk menüsünü, stok durumunu ve satış performansını tek merkezden yönet." actions={<button className="secondary" onClick={onRefresh}><RefreshCcw /> Yenile</button>} />
-    <div className="stat-grid">{cards.map((card) => <article className={`stat-card ${card.featured ? 'featured' : ''}`} key={card.label}><span><card.icon /></span><small>{card.label}</small><b>{card.value}</b><p>{card.note}</p></article>)}</div>
-    <div className="operation-grid">
-      <button onClick={() => onNavigate('products')}><span><ShoppingBag /></span><b>Menü ve fiyat</b><p>Ürünleri, fiyatları, görselleri ve satış durumunu yönet.</p><ChevronRight /></button>
-      <button onClick={() => onNavigate('stock')}><span><Boxes /></span><b>Stok kontrolü</b><p>Kritik ürünleri gör, stok giriş ve düzeltmelerini kaydet.</p><ChevronRight /></button>
-      <button onClick={() => onNavigate('reports')}><span><BarChart3 /></span><b>Raporlama</b><p>Ciro, sipariş ve ürün satışlarını tarih aralığıyla incele.</p><ChevronRight /></button>
-    </div>
-    <div className="dashboard-columns">
-      <section className="panel-card"><header><div><small>SON HAREKETLER</small><h3>Son siparişler</h3></div><button className="text-button" onClick={() => onNavigate('orders')}>Tümünü gör <ChevronRight /></button></header>
-        {!data?.recentOrders.length ? <Empty title="Henüz sipariş yok" text="Kiosktan alınan siparişler burada görünecek." /> : <div className="compact-list">{data.recentOrders.map((order) => <div key={order.number}><span><b>{order.number}</b><small>{dateTime(order.created_at)}</small></span><strong>{money(order.total)}</strong></div>)}</div>}
-      </section>
-      <section className="panel-card"><header><div><small>ÇOK SATANLAR</small><h3>Ürün performansı</h3></div></header>
-        {!data?.topProducts.length ? <Empty title="Satış verisi oluşmadı" text="İlk siparişten sonra sıralama başlayacak." /> : <div className="compact-list ranked">{data.topProducts.map((product, index) => <div key={product.name}><i>{index + 1}</i><span><b>{product.name}</b><small>{product.quantity} adet</small></span><strong>{money(product.revenue)}</strong></div>)}</div>}
-      </section>
-    </div>
-  </>;
-}
+// ---------------------------------------------------------------- Ürün özelleştirme (mevcut kahve akışı)
 
 const STANDARD_CONTENT: CustomizationOption[] = [
   ['no-foam', 'Köpüksüz'], ['extra-foam', 'Ekstra köpük'], ['less-sweet', 'Az tatlı'], ['decaf', 'Kafeinsiz seçenek'],
@@ -127,15 +151,16 @@ const defaultCustomization = (kind: ProductDraft['kind']): ProductCustomization 
   };
 };
 
-const emptyProduct = (categoryId = ''): ProductDraft => ({
-  categoryId, name: '', description: '', price: 0, image: '', emoji: '', kind: 'simple',
+const emptyProduct = (sectionId = '', categoryId = ''): ProductDraft => ({
+  sectionId, categoryId, name: '', description: '', price: 0, image: '', emoji: '', kind: 'simple',
   customizable: false, popular: false, active: true, stockQuantity: null, criticalStock: null,
   stockTrackingEnabled: false, stockSellable: true, customization: defaultCustomization('simple'),
 });
 
-function ProductCustomizationEditor({ value, products, productId, onChange }: { value: ProductCustomization; products: Product[]; productId?: string; onChange: (value: ProductCustomization) => void }) {
+function ProductCustomizationEditor({ value, products, productId, sectionId, onChange }: { value: ProductCustomization; products: Product[]; productId?: string; sectionId: string; onChange: (value: ProductCustomization) => void }) {
   type StepKey = keyof ProductCustomization;
-  const drinkProducts = products.filter((item) => item.id !== productId && ['desserts', 'snacks'].includes(item.categoryId) && item.active);
+  // Yan ürün adayları: kahvenin tatlı/atıştırmalık alt kategorileri veya aynı ana kategorideki diğer satıştaki ürünler.
+  const drinkProducts = products.filter((item) => item.id !== productId && item.active && (['desserts', 'snacks'].includes(item.categoryId) || (sectionId && item.sectionId === sectionId && item.kind === 'simple')));
   const emit = (key: StepKey, patch: Partial<ProductCustomization[StepKey]>) => onChange({ ...value, [key]: { ...value[key], ...patch } });
   const updateOption = (key: StepKey, id: string, patch: Partial<CustomizationOption>) => emit(key, { options: value[key].options.map((item) => item.id === id ? { ...item, ...patch } : item) });
   const togglePreset = (key: 'sides' | 'drinks', preset: CustomizationOption, enabled: boolean) => {
@@ -188,14 +213,14 @@ function ProductCustomizationEditor({ value, products, productId, onChange }: { 
           })}
         </div>}
         {step.enabled && key === 'drinks' && <div className="choice-list choice-list--drinks">
-          {!drinkProducts.length && <p className="choice-empty">Önce Tatlılar veya Atıştırmalıklar kategorisine satışta olan bir ürün ekleyin.</p>}
+          {!drinkProducts.length && <p className="choice-empty">Önce aynı kategoriye veya Tatlılar/Atıştırmalıklar alt kategorisine satışta olan bir ürün ekleyin.</p>}
           {drinkProducts.map((drink) => {
             const option = step.options.find((item) => item.sourceProductId === drink.id || item.id === drink.id);
             const enabled = Boolean(option?.enabled);
             const preset: CustomizationOption = { id: drink.id, sourceProductId: drink.id, name: drink.name, image: drink.image, priceDelta: 0, defaultSelected: false, enabled: true };
             return <div className="choice-row choice-row--preset" key={drink.id}>
               <input type="checkbox" checked={enabled} onChange={(event) => togglePreset('drinks', preset, event.target.checked)} />
-              <span className="preset-name preset-name--image">{drink.image ? <img src={assetUrl(drink.image)} alt="" /> : <span>🥤</span>}<i><b>{drink.name}</b><small>{drink.stockSellable ? 'Satışta' : 'Anlık satışa kapalı'}</small></i></span>
+              <span className="preset-name preset-name--image">{drink.image ? <img src={assetUrl(drink.image)} alt="" /> : <span>{drink.emoji || '🥤'}</span>}<i><b>{drink.name}</b><small>{drink.stockSellable ? 'Satışta' : 'Anlık satışa kapalı'}</small></i></span>
               <label className="default-choice"><input type="radio" name="default-drink" checked={Boolean(option?.defaultSelected)} disabled={!enabled} onChange={() => option && setDefault('drinks', option.id)} /><span>Varsayılan</span></label>
               <label className="price-choice"><input min="0" step="0.1" type="number" inputMode="decimal" placeholder="0" disabled={!enabled} value={option?.priceDelta || ''} onFocus={(event) => event.currentTarget.select()} onChange={(event) => option && updateOption('drinks', option.id, { priceDelta: event.target.value === '' ? 0 : Number(event.target.value) })} /><span>TL</span></label>
             </div>;
@@ -206,16 +231,25 @@ function ProductCustomizationEditor({ value, products, productId, onChange }: { 
   </section>;
 }
 
-function ProductModal({ product, products, categories, onClose, onSave }: { product: Product | null; products: Product[]; categories: Category[]; onClose: () => void; onSave: (draft: ProductDraft) => Promise<void> }) {
-  const [draft, setDraft] = useState<ProductDraft>(() => product ? {
-    id: product.id, categoryId: product.categoryId, name: product.name, description: product.description,
-    price: product.price, image: product.image ?? '', emoji: product.emoji ?? '', kind: product.kind,
-    group: product.group, protein: product.protein, patties: product.patties, serves: product.serves,
-    customizable: product.customizable, popular: product.popular, active: product.active,
-    stockQuantity: product.stockQuantity, criticalStock: product.criticalStock,
-    stockTrackingEnabled: product.stockTrackingEnabled, stockSellable: product.stockSellable,
-    customization: product.customization && 'content' in product.customization ? product.customization : defaultCustomization(product.kind),
-  } : emptyProduct(categories[0]?.id));
+function ProductThumb({ product, section }: { product: Pick<Product, 'image' | 'emoji'>; section?: Section }) {
+  return <span className="product-thumb" style={accentStyle(section?.accent)}>{product.image ? <img src={assetUrl(product.image)} alt="" /> : product.emoji ? <em>{product.emoji}</em> : <SectionIcon name={section?.icon} />}</span>;
+}
+
+// ---------------------------------------------------------------- Ürünler
+
+function ProductModal({ product, products, sections, categories, defaultSectionId, onClose, onSave }: { product: Product | null; products: Product[]; sections: Section[]; categories: Category[]; defaultSectionId: string; onClose: () => void; onSave: (draft: ProductDraft) => Promise<void> }) {
+  const [draft, setDraft] = useState<ProductDraft>(() => {
+    if (product) return {
+      id: product.id, sectionId: product.sectionId || categories.find((item) => item.id === product.categoryId)?.sectionId || '', categoryId: product.categoryId, name: product.name, description: product.description,
+      price: product.price, image: product.image ?? '', emoji: product.emoji ?? '', kind: product.kind,
+      group: product.group, protein: product.protein, patties: product.patties, serves: product.serves,
+      customizable: product.customizable, popular: product.popular, active: product.active,
+      stockQuantity: product.stockQuantity, criticalStock: product.criticalStock,
+      stockTrackingEnabled: product.stockTrackingEnabled, stockSellable: product.stockSellable,
+      customization: product.customization && 'content' in product.customization ? product.customization : defaultCustomization(product.kind),
+    };
+    return emptyProduct(defaultSectionId, categories.find((item) => item.sectionId === defaultSectionId)?.id ?? '');
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -225,7 +259,10 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
   const [stockQuantityInput, setStockQuantityInput] = useState(() => product?.stockQuantity == null ? '' : String(product.stockQuantity));
   const [criticalStockInput, setCriticalStockInput] = useState(() => product?.criticalStock == null ? '' : String(product.criticalStock));
   const isCustomizableDrink = draft.kind === 'coffee' || draft.kind === 'cold-coffee';
+  const section = sections.find((item) => item.id === draft.sectionId);
+  const sectionCategories = categories.filter((item) => item.sectionId === draft.sectionId);
   const set = <K extends keyof ProductDraft>(key: K, value: ProductDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const changeSection = (sectionId: string) => setDraft((current) => ({ ...current, sectionId, categoryId: categories.find((item) => item.sectionId === sectionId)?.id ?? '' }));
   const selectImage = (file?: File) => {
     if (!file) return;
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('PNG, JPG veya WEBP formatında bir görsel seçin.'); return; }
@@ -238,30 +275,17 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
+    if (!draft.sectionId) { setError('Ana kategori seçimi zorunludur.'); return; }
+    if (!draft.categoryId || !sectionCategories.some((item) => item.id === draft.categoryId)) { setError('Bu ana kategoride alt kategori yok. Önce Alt Kategoriler sayfasından bir alt kategori ekleyin.'); return; }
 
     const price = Number(priceInput);
-    if (priceInput.trim() === '' || !Number.isFinite(price) || price < 0) {
-      setError('Geçerli bir ürün fiyatı girin.');
-      return;
-    }
-
+    if (priceInput.trim() === '' || !Number.isFinite(price) || price < 0) { setError('Geçerli bir ürün fiyatı girin.'); return; }
     const patties = pattiesInput.trim() === '' ? undefined : Number(pattiesInput);
-    if (patties !== undefined && (!Number.isInteger(patties) || patties < 1 || patties > 10)) {
-      setError('Servis ölçüsü 1 ile 10 arasında bir tam sayı olmalıdır.');
-      return;
-    }
-
+    if (patties !== undefined && (!Number.isInteger(patties) || patties < 1 || patties > 10)) { setError('Servis ölçüsü 1 ile 10 arasında bir tam sayı olmalıdır.'); return; }
     const stockQuantity = stockQuantityInput.trim() === '' ? null : Number(stockQuantityInput);
-    if (stockQuantity !== null && (!Number.isInteger(stockQuantity) || stockQuantity < 0)) {
-      setError('Başlangıç stoğu sıfır veya pozitif bir tam sayı olmalıdır.');
-      return;
-    }
-
+    if (stockQuantity !== null && (!Number.isInteger(stockQuantity) || stockQuantity < 0)) { setError('Başlangıç stoğu sıfır veya pozitif bir tam sayı olmalıdır.'); return; }
     const criticalStock = criticalStockInput.trim() === '' ? null : Number(criticalStockInput);
-    if (criticalStock !== null && (!Number.isInteger(criticalStock) || criticalStock < 0)) {
-      setError('Kritik stok sıfır veya pozitif bir tam sayı olmalıdır.');
-      return;
-    }
+    if (criticalStock !== null && (!Number.isInteger(criticalStock) || criticalStock < 0)) { setError('Kritik stok sıfır veya pozitif bir tam sayı olmalıdır.'); return; }
 
     setSaving(true);
     try {
@@ -278,73 +302,113 @@ function ProductModal({ product, products, categories, onClose, onSave }: { prod
       setSaving(false);
     }
   };
-  return <Modal wide title={product ? 'Ürünü düzenle' : 'Yeni ürün ekle'} subtitle="MENÜ ÜRÜNÜ" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>Vazgeç</button><button className="primary" type="submit" form="product-form" disabled={saving}>{saving ? <><Loader2 className="spin" /> Görsel yükleniyor...</> : <><Check /> Kaydet</>}</button></>}>
+  return <Modal wide title={product ? 'Ürünü düzenle' : 'Yeni ürün ekle'} subtitle="ÜRÜN" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>Vazgeç</button><button className="primary" type="submit" form="product-form" disabled={saving}>{saving ? <><Loader2 className="spin" /> Kaydediliyor...</> : <><Check /> Kaydet</>}</button></>}>
     <form id="product-form" className="form-grid" onSubmit={submit}>
       {error && <div className="form-error">{error}</div>}
-      <label><span>Ürün adı</span><input required value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="Magic Coffee" /></label>
-      <label><span>Kategori</span><select required value={draft.categoryId} onChange={(e) => set('categoryId', e.target.value)}>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
+      <label><span>Ana kategori *</span><select required value={draft.sectionId} onChange={(e) => changeSection(e.target.value)}><option value="" disabled>Ana kategori seçin</option>{sections.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+      <label><span>Alt kategori *</span><select required value={draft.categoryId} onChange={(e) => set('categoryId', e.target.value)} disabled={!sectionCategories.length}>{!sectionCategories.length && <option value="">{draft.sectionId ? 'Bu kategoride alt kategori yok' : 'Önce ana kategori seçin'}</option>}{sectionCategories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
+      <label><span>Ürün adı</span><input required value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="Ürün adı" /></label>
       <label><span>Fiyat (TL)</span><input required min="0" step="0.01" type="number" inputMode="decimal" placeholder="0" value={priceInput} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setPriceInput(event.target.value)} /></label>
       <label><span>Ürün tipi</span><select value={draft.kind} onChange={(e) => { const kind = e.target.value as ProductDraft['kind']; setDraft((current) => ({ ...current, kind, customization: defaultCustomization(kind), customizable: kind !== 'simple' })); }}><option value="simple">Standart ürün</option><option value="coffee">Sıcak kahve</option><option value="cold-coffee">Soğuk kahve</option></select></label>
+      <label><span>Emoji (görsel yoksa)</span><input maxLength={8} value={draft.emoji ?? ''} onChange={(e) => set('emoji', e.target.value)} placeholder="🍕" /></label>
       <label className="span-2"><span>Açıklama</span><textarea value={draft.description} onChange={(e) => set('description', e.target.value)} placeholder="Kiosk kartında gösterilecek açıklama" /></label>
       <label className="span-2"><span>Görsel yolu veya URL</span><input value={draft.image ?? ''} onChange={(e) => { set('image', e.target.value); setImageFile(null); setImagePreview(''); }} placeholder="/images/products/urun.webp" /></label>
       <div className="product-image-picker span-2">
-        <div className="product-image-preview">{imagePreview || draft.image ? <img src={imagePreview || assetUrl(draft.image)} alt="Ürün önizlemesi" /> : <ImagePlus />}</div>
-        <div><b>Bilgisayardan ürün görseli seç</b><small>PNG, JPG veya WEBP · En fazla 5 MB</small>{imageFile && <em>{imageFile.name}</em>}</div>
+        <div className="product-image-preview" style={accentStyle(section?.accent)}>{imagePreview || draft.image ? <img src={imagePreview || assetUrl(draft.image)} alt="Ürün önizlemesi" /> : draft.emoji ? <em>{draft.emoji}</em> : <ImagePlus />}</div>
+        <div><b>Bilgisayardan ürün görseli seç</b><small>PNG, JPG veya WEBP · En fazla 5 MB · Görsel yoksa emoji ve kategori rengi gösterilir</small>{imageFile && <em>{imageFile.name}</em>}</div>
         <label className="file-picker"><ImagePlus /><span>Dosya Seç</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => selectImage(event.target.files?.[0])} /></label>
       </div>
-      <label><span>Ürün etiketi</span><input value={draft.protein ?? ''} onChange={(e) => set('protein', e.target.value || undefined)} placeholder="Sıcak / Soğuk / Tatlı / Atıştırmalık" /></label>
+      <label><span>Ürün etiketi</span><input value={draft.protein ?? ''} onChange={(e) => set('protein', e.target.value || undefined)} placeholder="Sıcak / Soğuk / Vegan / Yeni" /></label>
       <label><span>Servis ölçüsü</span><input min="1" max="10" step="1" type="number" inputMode="numeric" placeholder="1" value={pattiesInput} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setPattiesInput(event.target.value)} /></label>
       <label><span>Başlangıç stoğu</span><input min="0" step="1" type="number" inputMode="numeric" value={stockQuantityInput} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setStockQuantityInput(event.target.value)} placeholder="Takip edilmiyorsa boş" /></label>
       <label><span>Kritik stok</span><input min="0" step="1" type="number" inputMode="numeric" placeholder="0" value={criticalStockInput} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setCriticalStockInput(event.target.value)} /></label>
-      {isCustomizableDrink && <ProductCustomizationEditor productId={product?.id} value={draft.customization} products={products} onChange={(customization) => setDraft((current) => ({ ...current, customization, customizable: Object.values(customization).some((step) => step.enabled && step.options.some((option) => option.enabled)) }))} />}
+      {isCustomizableDrink && <ProductCustomizationEditor productId={product?.id} sectionId={draft.sectionId} value={draft.customization} products={products} onChange={(customization) => setDraft((current) => ({ ...current, customization, customizable: Object.values(customization).some((step) => step.enabled && step.options.some((option) => option.enabled)) }))} />}
       <div className="check-row span-2"><label><input type="checkbox" checked={draft.active} onChange={(e) => set('active', e.target.checked)} /><span>Satışta</span></label><label><input type="checkbox" checked={draft.popular} onChange={(e) => set('popular', e.target.checked)} /><span>Çok sevilen</span></label><span className={`customizable-state ${draft.customizable ? 'active' : ''}`}><Sparkles /> {draft.customizable ? 'Seçim akışı aktif' : 'Seçim akışı kapalı'}</span></div>
     </form>
   </Modal>;
 }
 
-function ProductsView({ products, categories, loading, onRefresh, onCreate, onUpdate, onDelete }: { products: Product[]; categories: Category[]; loading: boolean; onRefresh: () => void; onCreate: (draft: ProductDraft) => Promise<void>; onUpdate: (id: string, draft: ProductDraft) => Promise<void>; onDelete: (id: string) => Promise<void> }) {
+function ProductsView({ products, sections, categories, filters, loading, error, onRefresh, onCreate, onUpdate, onDelete }: { products: Product[]; sections: Section[]; categories: Category[]; filters: Filters; loading: boolean; error: string; onRefresh: () => void; onCreate: (draft: ProductDraft) => Promise<void>; onUpdate: (id: string, draft: ProductDraft) => Promise<void>; onDelete: (id: string) => Promise<void> }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
   const [editing, setEditing] = useState<Product | null | undefined>(undefined);
-  const filtered = products.filter((product) => (category === 'all' || product.categoryId === category) && `${product.name} ${product.description}`.toLocaleLowerCase('tr').includes(search.toLocaleLowerCase('tr')));
-  const remove = async (product: Product) => { if (window.confirm(`${product.name} kalıcı olarak silinsin mi?`)) await onDelete(product.id); };
+  const sectionById = useMemo(() => new Map(sections.map((item) => [item.id, item])), [sections]);
+  const visibleCategories = categories.filter((item) => !filters.section || item.sectionId === filters.section);
+  useEffect(() => { if (category !== 'all' && !visibleCategories.some((item) => item.id === category)) setCategory('all'); }, [category, visibleCategories]);
+  const term = search.toLocaleLowerCase('tr');
+  const filtered = products.filter((product) => (!filters.section || product.sectionId === filters.section) && (category === 'all' || product.categoryId === category) && `${product.name} ${product.description} ${product.id}`.toLocaleLowerCase('tr').includes(term));
+  const remove = async (product: Product) => { if (window.confirm(`${product.name} kalıcı olarak silinsin mi?`)) { try { await onDelete(product.id); } catch (err) { window.alert((err as Error).message); } } };
+  const currentSection = sectionById.get(filters.section);
   return <>
-    <PageHeader eyebrow="MENÜ VE FİYAT" title="Menü ürünleri" description="Kiosktaki ürünleri, fiyatları, görselleri ve satış durumlarını yönet." actions={<><button className="secondary" onClick={onRefresh}><RefreshCcw /></button><button className="primary" onClick={() => setEditing(null)}><Plus /> Yeni Ürün</button></>} />
-    <div className="toolbar"><label className="search"><Search /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ürün ara..." /></label><select value={category} onChange={(e) => setCategory(e.target.value)}><option value="all">Tüm kategoriler</option>{categories.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select><span>{filtered.length} ürün</span></div>
-    <section className="table-card">{loading ? <Loading /> : !filtered.length ? <Empty title="Ürün bulunamadı" text="Filtreleri değiştirin veya yeni bir ürün ekleyin." /> : <div className="table-wrap"><table><thead><tr><th>Ürün</th><th>Kategori</th><th>Fiyat</th><th>Stok</th><th>Durum</th><th /></tr></thead><tbody>{filtered.map((product) => <tr key={product.id}><td><div className="product-cell"><span>{product.image ? <img src={assetUrl(product.image)} alt="" /> : product.emoji || <ShoppingBag />}</span><div><b>{product.name}</b><small>{product.id}</small></div></div></td><td><span className="tag">{product.categoryName}</span></td><td><strong>{money(product.price)}</strong></td><td>{!product.stockTrackingEnabled ? <span className="muted">Takipsiz</span> : <span className={Number(product.stockQuantity ?? 0) <= (product.criticalStock ?? 0) ? 'stock-low' : ''}>{Number(product.stockQuantity ?? 0)} adet</span>}</td><td><span className={`status ${product.active ? 'active' : ''}`}>{product.active ? 'Satışta' : 'Kapalı'}</span></td><td><div className="row-actions"><button title="Düzenle" onClick={() => setEditing(product)}><Edit3 /></button><button className="danger" title="Sil" onClick={() => remove(product)}><Trash2 /></button></div></td></tr>)}</tbody></table></div>}</section>
-    {editing !== undefined && <ProductModal product={editing} products={products} categories={categories} onClose={() => setEditing(undefined)} onSave={(draft) => editing ? onUpdate(editing.id, draft) : onCreate(draft)} />}
+    <PageHeader eyebrow="KATALOG" title="Ürünler" description={`${currentSection ? currentSection.name : 'Tüm kategoriler'} · ürünleri, fiyatları, görselleri ve satış durumlarını yönet.`} actions={<><button className="secondary" onClick={onRefresh}><RefreshCcw /></button><button className="primary" onClick={() => setEditing(null)} disabled={!sections.length}><Plus /> Yeni Ürün</button></>} />
+    {error && <ErrorBanner message={error} onRetry={onRefresh} />}
+    <div className="toolbar"><label className="search"><Search /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ürün ara..." /></label><select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Alt kategori"><option value="all">Tüm alt kategoriler</option>{visibleCategories.map((item) => <option value={item.id} key={item.id}>{filters.section ? item.name : `${sectionById.get(item.sectionId)?.name ?? item.sectionId} › ${item.name}`}</option>)}</select><span>{filtered.length} ürün</span></div>
+    <section className="table-card">{loading && !products.length ? <Skeleton rows={8} /> : !filtered.length ? <Empty icon={ShoppingBag} title="Ürün bulunamadı" text="Filtreleri değiştirin veya yeni bir ürün ekleyin." action={<button className="primary" onClick={() => setEditing(null)}><Plus /> Yeni Ürün</button>} /> : <div className="table-wrap"><table><thead><tr><th>Ürün</th><th>Kategori</th><th>Fiyat</th><th>Stok</th><th>Durum</th><th /></tr></thead><tbody>{filtered.map((product) => {
+      const section = sectionById.get(product.sectionId);
+      return <tr key={product.id}><td><div className="product-cell"><ProductThumb product={product} section={section} /><div><b>{product.name}</b><small>{product.id}</small></div></div></td><td><div className="chip-stack"><SectionChip section={section} fallback={product.sectionId || '—'} /><span className="tag">{product.categoryName || categories.find((item) => item.id === product.categoryId)?.name || product.categoryId}</span></div></td><td><strong>{money(product.price)}</strong></td><td>{!product.stockTrackingEnabled ? <span className="muted">Takipsiz</span> : <span className={Number(product.stockQuantity ?? 0) <= (product.criticalStock ?? 0) ? 'stock-low' : ''}>{Number(product.stockQuantity ?? 0)} adet</span>}</td><td><span className={`status ${product.active ? 'active' : ''}`}>{product.active ? 'Satışta' : 'Kapalı'}</span></td><td><div className="row-actions"><button title="Düzenle" onClick={() => setEditing(product)}><Edit3 /></button><button className="danger" title="Sil" onClick={() => remove(product)}><Trash2 /></button></div></td></tr>;
+    })}</tbody></table></div>}</section>
+    {editing !== undefined && <ProductModal product={editing} products={products} sections={sections} categories={categories} defaultSectionId={filters.section || sections[0]?.id || ''} onClose={() => setEditing(undefined)} onSave={(draft) => editing ? onUpdate(editing.id, draft) : onCreate(draft)} />}
   </>;
 }
 
-function CategoryModal({ category, onClose, onSave }: { category: Category | null; onClose: () => void; onSave: (value: { name: string; eyebrow: string; active: boolean }) => Promise<void> }) {
+// ---------------------------------------------------------------- Alt kategoriler
+
+function CategoryModal({ category, sections, defaultSectionId, onClose, onSave }: { category: Category | null; sections: Section[]; defaultSectionId: string; onClose: () => void; onSave: (value: Partial<Category>) => Promise<void> }) {
+  const [sectionId, setSectionId] = useState(category?.sectionId || defaultSectionId);
   const [name, setName] = useState(category?.name ?? ''); const [eyebrow, setEyebrow] = useState(category?.eyebrow ?? ''); const [active, setActive] = useState(category?.active ?? true); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
-  const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); setError(''); try { await onSave({ name, eyebrow, active }); onClose(); } catch (err) { setError((err as Error).message); } finally { setSaving(false); } };
-  return <Modal title={category ? 'Kategoriyi düzenle' : 'Yeni kategori'} subtitle="KATEGORİ YÖNETİMİ" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>Vazgeç</button><button className="primary" type="submit" form="category-form" disabled={saving}>{saving ? <Loader2 className="spin" /> : <Check />} Kaydet</button></>}><form id="category-form" className="form-stack" onSubmit={submit}>{error && <div className="form-error">{error}</div>}<label><span>Kategori adı</span><input required value={name} onChange={(e) => setName(e.target.value)} /></label><label><span>Kısa açıklama</span><input value={eyebrow} onChange={(e) => setEyebrow(e.target.value)} placeholder="Buz gibi" /></label><label className="switch-line"><span><b>Kioskta göster</b><small>Kapalı kategoriler kiosk menüsünde görünmez.</small></span><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /></label></form></Modal>;
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!sectionId) { setError('Ana kategori seçimi zorunludur.'); return; }
+    setSaving(true); setError('');
+    try { await onSave({ sectionId, name: name.trim(), eyebrow: eyebrow.trim(), active }); onClose(); } catch (err) { setError((err as Error).message); } finally { setSaving(false); }
+  };
+  return <Modal title={category ? 'Alt kategoriyi düzenle' : 'Yeni alt kategori'} subtitle="ALT KATEGORİ" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>Vazgeç</button><button className="primary" type="submit" form="category-form" disabled={saving}>{saving ? <Loader2 className="spin" /> : <Check />} Kaydet</button></>}><form id="category-form" className="form-stack" onSubmit={submit}>{error && <div className="form-error">{error}</div>}<label><span>Ana kategori *</span><select required value={sectionId} onChange={(e) => setSectionId(e.target.value)}><option value="" disabled>Ana kategori seçin</option>{sections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label><span>Alt kategori adı</span><input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Sıcak Kahveler" /></label><label><span>Kısa açıklama</span><input value={eyebrow} onChange={(e) => setEyebrow(e.target.value)} placeholder="Buz gibi" /></label><label className="switch-line"><span><b>Kioskta göster</b><small>Kapalı alt kategoriler kiosk menüsünde görünmez.</small></span><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /></label></form></Modal>;
 }
 
-function CategoriesView({ categories, loading, onCreate, onUpdate, onDelete, onReorder }: { categories: Category[]; loading: boolean; onCreate: (value: Partial<Category>) => Promise<void>; onUpdate: (id: string, value: Partial<Category>) => Promise<void>; onDelete: (id: string, deleteProducts?: boolean) => Promise<void>; onReorder: (ids: string[]) => Promise<void> }) {
+function CategoriesView({ categories, sections, filters, loading, error, onRefresh, onCreate, onUpdate, onDelete, onReorder }: { categories: Category[]; sections: Section[]; filters: Filters; loading: boolean; error: string; onRefresh: () => void; onCreate: (value: Partial<Category>) => Promise<void>; onUpdate: (id: string, value: Partial<Category>) => Promise<void>; onDelete: (id: string, deleteProducts?: boolean) => Promise<void>; onReorder: (ids: string[]) => Promise<void> }) {
   const [editing, setEditing] = useState<Category | null | undefined>(undefined);
-  const move = async (index: number, direction: -1 | 1) => { const target = index + direction; if (target < 0 || target >= categories.length) return; const ids = categories.map((item) => item.id); [ids[index], ids[target]] = [ids[target], ids[index]]; await onReorder(ids); };
+  const visible = categories.filter((item) => !filters.section || item.sectionId === filters.section);
+  const groups = sections
+    .filter((section) => !filters.section || section.id === filters.section)
+    .map((section) => ({ section, items: visible.filter((item) => item.sectionId === section.id) }));
+  const orphans = visible.filter((item) => !sections.some((section) => section.id === item.sectionId));
+  const move = async (list: Category[], index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= list.length) return;
+    const ids = categories.map((item) => item.id);
+    const a = ids.indexOf(list[index].id); const b = ids.indexOf(list[target].id);
+    [ids[a], ids[b]] = [ids[b], ids[a]];
+    await onReorder(ids);
+  };
   const remove = async (category: Category) => {
     const hasProducts = category.productCount > 0;
-    const message = hasProducts
-      ? `${category.name} kategorisi ve bu kategoriye bağlı ${category.productCount} ürün silinsin mi?`
-      : `${category.name} kategorisi silinsin mi?`;
-    if (window.confirm(message)) {
-      try { await onDelete(category.id, hasProducts); } catch (err) { window.alert((err as Error).message); }
-    }
+    const message = hasProducts ? `${category.name} alt kategorisi ve bağlı ${category.productCount} ürün silinsin mi?` : `${category.name} alt kategorisi silinsin mi?`;
+    if (window.confirm(message)) { try { await onDelete(category.id, hasProducts); } catch (err) { window.alert((err as Error).message); } }
   };
-  return <><PageHeader eyebrow="MENÜ VE FİYAT" title="Kategori yönetimi" description="Kiosk kategori sırasını, başlıklarını ve görünürlüğünü düzenle." actions={<button className="primary" onClick={() => setEditing(null)}><Plus /> Yeni Kategori</button>} />
-    <div className="category-summary"><article><Tags /><span><b>{categories.length}</b><small>Toplam kategori</small></span></article><article><Eye /><span><b>{categories.filter((item) => item.active).length}</b><small>Kioskta görünür</small></span></article><article><ShoppingBag /><span><b>{categories.reduce((sum, item) => sum + item.productCount, 0)}</b><small>Bağlı ürün</small></span></article></div>
-    <section className="category-list panel-card"><header><div><small>KATEGORİ SIRASI</small><h3>Kiosk menü yapısı</h3></div><span className="muted">Oklarla sıralamayı değiştir</span></header>{loading ? <Loading /> : categories.map((category, index) => <article className="category-row" key={category.id}><span className="category-index">{index + 1}</span><div className="category-copy"><b>{category.name}</b><small>{category.eyebrow || 'Kısa açıklama eklenmedi'} · {category.productCount} ürün</small></div><span className={`status ${category.active ? 'active' : ''}`}>{category.active ? 'Yayında' : 'Gizli'}</span><div className="row-actions"><button disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp /></button><button disabled={index === categories.length - 1} onClick={() => move(index, 1)}><ArrowDown /></button><button onClick={() => setEditing(category)}><Edit3 /></button><button className="danger" onClick={() => remove(category)}><Trash2 /></button></div></article>)}</section>
-    {editing !== undefined && <CategoryModal category={editing} onClose={() => setEditing(undefined)} onSave={(value) => editing ? onUpdate(editing.id, value) : onCreate(value)} />}
+  const renderRows = (list: Category[]) => list.map((category, index) => <article className="category-row" key={category.id}><span className="category-index">{index + 1}</span><div className="category-copy"><b>{category.name}</b><small>{category.eyebrow || 'Kısa açıklama eklenmedi'} · {category.productCount} ürün</small></div><span className={`status ${category.active ? 'active' : ''}`}>{category.active ? 'Yayında' : 'Gizli'}</span><div className="row-actions"><button title="Yukarı" disabled={index === 0} onClick={() => move(list, index, -1)}><ArrowUp /></button><button title="Aşağı" disabled={index === list.length - 1} onClick={() => move(list, index, 1)}><ArrowDown /></button><button title="Düzenle" onClick={() => setEditing(category)}><Edit3 /></button><button className="danger" title="Sil" onClick={() => remove(category)}><Trash2 /></button></div></article>);
+  return <><PageHeader eyebrow="KATALOG" title="Alt kategoriler" description="Her ana kategorinin kiosk kataloğundaki alt kategori sırasını, başlıklarını ve görünürlüğünü düzenle." actions={<><button className="secondary" onClick={onRefresh}><RefreshCcw /></button><button className="primary" onClick={() => setEditing(null)} disabled={!sections.length}><Plus /> Yeni Alt Kategori</button></>} />
+    <div className="summary-strip summary-strip--3"><article><Tags /><span><b>{visible.length}</b><small>Alt kategori</small></span></article><article className="ok"><Eye /><span><b>{visible.filter((item) => item.active).length}</b><small>Kioskta görünür</small></span></article><article><ShoppingBag /><span><b>{visible.reduce((sum, item) => sum + item.productCount, 0)}</b><small>Bağlı ürün</small></span></article></div>
+    {error && <ErrorBanner message={error} onRetry={onRefresh} />}
+    {loading && !categories.length ? <Skeleton rows={8} /> : !visible.length ? <section className="table-card"><Empty icon={FolderTree} title="Alt kategori yok" text="Seçili ana kategoriye ilk alt kategoriyi ekleyin." action={<button className="primary" onClick={() => setEditing(null)}><Plus /> Yeni Alt Kategori</button>} /></section> : <div className="category-groups">
+      {groups.filter((group) => group.items.length || filters.section).map(({ section, items }) => <section className="category-list panel-card" key={section.id} style={accentStyle(section.accent)}>
+        <header><div className="group-title"><span className="accent-tile"><SectionIcon name={section.icon} /></span><div><small>{section.orderPrefix || 'ANA KATEGORİ'}</small><h3>{section.name}</h3></div></div><span className="muted">{items.length} alt kategori</span></header>
+        {items.length ? renderRows(items) : <Empty icon={FolderTree} title="Bu kategoride alt kategori yok" text="Ürün ekleyebilmek için en az bir alt kategori gerekir." />}
+      </section>)}
+      {orphans.length > 0 && <section className="category-list panel-card"><header><div><small>EŞLEŞMEYEN</small><h3>Ana kategorisi bulunamayanlar</h3></div></header>{renderRows(orphans)}</section>}
+    </div>}
+    {editing !== undefined && <CategoryModal category={editing} sections={sections} defaultSectionId={filters.section || sections[0]?.id || ''} onClose={() => setEditing(undefined)} onSave={(value) => editing ? onUpdate(editing.id, value) : onCreate(value)} />}
   </>;
 }
 
-function StockView({ products, movements, loading, onRefresh, onAdjust, onSettings }: {
+// ---------------------------------------------------------------- Stok
+
+function StockView({ products, movements, sections, filters, loading, error, onRefresh, onAdjust, onSettings }: {
   products: Product[];
   movements: StockMovement[];
+  sections: Section[];
+  filters: Filters;
   loading: boolean;
+  error: string;
   onRefresh: () => void;
   onAdjust: (id: string, payload: { mode: 'set' | 'add' | 'remove'; quantity: number; note: string }) => Promise<void>;
   onSettings: (id: string, payload: { stockTrackingEnabled?: boolean; stockSellable?: boolean }) => Promise<void>;
@@ -352,47 +416,39 @@ function StockView({ products, movements, loading, onRefresh, onAdjust, onSettin
   const [search, setSearch] = useState('');
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  const tracked = products.filter((item) => item.stockTrackingEnabled);
+  const [actionError, setActionError] = useState('');
+  const sectionById = useMemo(() => new Map(sections.map((item) => [item.id, item])), [sections]);
+  const scoped = products.filter((item) => !filters.section || item.sectionId === filters.section);
+  const scopedIds = new Set(scoped.map((item) => item.id));
+  const scopedMovements = filters.section ? movements.filter((item) => scopedIds.has(item.product_id)) : movements;
+  const tracked = scoped.filter((item) => item.stockTrackingEnabled);
   const low = tracked.filter((item) => Number(item.stockQuantity ?? 0) <= (item.criticalStock ?? 0));
   const normalizedSearch = search.trim().toLocaleLowerCase('tr-TR');
-  const filtered = products.filter((item) => !normalizedSearch || [item.name, item.categoryName].some((value) => value?.toLocaleLowerCase('tr-TR').includes(normalizedSearch)));
+  const filtered = scoped.filter((item) => !normalizedSearch || [item.name, item.categoryName, sectionById.get(item.sectionId)?.name].some((value) => value?.toLocaleLowerCase('tr-TR').includes(normalizedSearch)));
 
   const changeSetting = async (product: Product, payload: { stockTrackingEnabled?: boolean; stockSellable?: boolean }) => {
-    setSavingKey(`${product.id}:settings`);
-    setError('');
-    try { await onSettings(product.id, payload); }
-    catch (err) { setError((err as Error).message); }
-    finally { setSavingKey(null); }
+    setSavingKey(`${product.id}:settings`); setActionError('');
+    try { await onSettings(product.id, payload); } catch (err) { setActionError((err as Error).message); } finally { setSavingKey(null); }
   };
-
   const changeStock = async (product: Product, direction: 1 | -1) => {
     const quantity = Number(quantityDrafts[product.id] ?? '1');
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      setError('Stok miktarı pozitif bir tam sayı olmalıdır.');
-      return;
-    }
-    setSavingKey(`${product.id}:stock`);
-    setError('');
+    if (!Number.isInteger(quantity) || quantity <= 0) { setActionError('Stok miktarı pozitif bir tam sayı olmalıdır.'); return; }
+    setSavingKey(`${product.id}:stock`); setActionError('');
     try {
-      await onAdjust(product.id, {
-        mode: direction > 0 ? 'add' : 'remove',
-        quantity,
-        note: direction > 0 ? 'Panel stok girişi' : 'Panel stok azaltma',
-      });
+      await onAdjust(product.id, { mode: direction > 0 ? 'add' : 'remove', quantity, note: direction > 0 ? 'Panel stok girişi' : 'Panel stok azaltma' });
       setQuantityDrafts((current) => ({ ...current, [product.id]: '1' }));
-    } catch (err) { setError((err as Error).message); }
-    finally { setSavingKey(null); }
+    } catch (err) { setActionError((err as Error).message); } finally { setSavingKey(null); }
   };
 
   return <>
-    <PageHeader eyebrow="STOK VE MUTFAK" title="Stok yönetimi" description="Ürün stoklarını takip et, giriş ve düzeltme hareketlerini kayıt altına al." actions={<button className="secondary" onClick={onRefresh}><RefreshCcw /> Yenile</button>} />
-    <div className="stock-summary"><article><Boxes /><span><small>TAKİP EDİLEN</small><b>{tracked.length}</b></span></article><article className={low.length ? 'warning' : ''}><AlertTriangle /><span><small>KRİTİK STOK</small><b>{low.length}</b></span></article><article><Database /><span><small>TOPLAM HAREKET</small><b>{movements.length}</b></span></article></div>
-    {error && <div className="form-error stock-error">{error}</div>}
+    <PageHeader eyebrow="KATALOG" title="Stok" description="Ürün stoklarını takip et, giriş ve düzeltme hareketlerini kayıt altına al. Stok tüm kiosklarda ortaktır." actions={<button className="secondary" onClick={onRefresh}><RefreshCcw /> Yenile</button>} />
+    <div className="summary-strip summary-strip--3"><article><Boxes /><span><b>{tracked.length}</b><small>Takip edilen ürün</small></span></article><article className={low.length ? 'warning' : ''}><AlertTriangle /><span><b>{low.length}</b><small>Kritik stok</small></span></article><article><Database /><span><b>{scopedMovements.length}</b><small>Stok hareketi</small></span></article></div>
+    {error && <ErrorBanner message={error} onRetry={onRefresh} />}
+    {actionError && <div className="form-error page-error">{actionError}</div>}
     <div className="stock-layout">
       <section className="table-card">
         <div className="card-toolbar"><div><small>ÜRÜN STOKLARI</small><h3>Güncel durum</h3></div><label className="search"><Search /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ürün veya kategori ara..." /></label></div>
-        {loading ? <Loading /> : <div className="stock-table-wrap"><table className="stock-table"><thead><tr><th>Ürün</th><th>Kategori</th><th>Güncel Stok</th><th>Stok Takibi</th><th>Kiosk</th><th>Stok İşlemi</th></tr></thead><tbody>
+        {loading && !products.length ? <Skeleton rows={8} /> : <div className="stock-table-wrap"><table className="stock-table"><thead><tr><th>Ürün</th><th>Kategori</th><th>Güncel Stok</th><th>Stok Takibi</th><th>Kiosk</th><th>Stok İşlemi</th></tr></thead><tbody>
           {filtered.map((product) => {
             const tracking = product.stockTrackingEnabled;
             const sellable = product.stockSellable;
@@ -400,224 +456,258 @@ function StockView({ products, movements, loading, onRefresh, onAdjust, onSettin
             const savingSettings = savingKey === `${product.id}:settings`;
             const savingStock = savingKey === `${product.id}:stock`;
             const kioskStatus = !sellable ? 'Satış kapalı' : tracking && quantity <= 0 ? 'Stok yok' : 'Satışta';
+            const section = sectionById.get(product.sectionId);
             return <tr key={product.id}>
-              <td><div className="stock-product"><span className="stock-image">{product.image ? <img src={assetUrl(product.image)} alt="" /> : <Boxes />}</span><span><b>{product.name}</b><small>{product.id}</small></span></div></td>
-              <td><span className="tag">{product.categoryName}</span></td>
+              <td><div className="stock-product"><ProductThumb product={product} section={section} /><span><b>{product.name}</b><small>{product.categoryName || product.id}</small></span></div></td>
+              <td><SectionChip section={section} fallback={product.sectionId || '—'} /></td>
               <td>{tracking ? <strong className={quantity <= (product.criticalStock ?? 0) ? 'stock-low' : 'stock-ok'}>{quantity > 0 ? `VAR / ${quantity}` : 'YOK / 0'}</strong> : <span className="muted">Takip kapalı</span>}</td>
               <td><button className={`stock-toggle ${tracking ? 'is-on' : ''}`} disabled={savingSettings} onClick={() => changeSetting(product, { stockTrackingEnabled: !tracking })}>{savingSettings ? <Loader2 className="spin" /> : null}{tracking ? 'Açık' : 'Kapalı'}</button></td>
               <td><div className="kiosk-stock-state"><span className={`status ${sellable && (!tracking || quantity > 0) ? 'active' : ''}`}>{kioskStatus}</span><button className={`sale-toggle ${sellable ? '' : 'open'}`} disabled={savingSettings} onClick={() => changeSetting(product, { stockSellable: !sellable })}>{sellable ? 'Satışa Kapat' : 'Satışa Aç'}</button></div></td>
               <td><div className="stock-inline-actions"><input type="number" inputMode="numeric" min="1" step="1" value={quantityDrafts[product.id] ?? '1'} disabled={!tracking || savingStock} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setQuantityDrafts((current) => ({ ...current, [product.id]: event.target.value }))} /><button className="stock-add" disabled={!tracking || savingStock} onClick={() => changeStock(product, 1)}>{savingStock ? <Loader2 className="spin" /> : <Plus />} Ekle</button><button className="stock-remove" disabled={!tracking || savingStock || quantity <= 0} onClick={() => changeStock(product, -1)}><Minus /> Azalt</button></div></td>
             </tr>;
           })}
-          {!filtered.length && <tr><td colSpan={6}><Empty title="Ürün bulunamadı" text="Arama ifadesini değiştirip tekrar deneyin." /></td></tr>}
+          {!filtered.length && <tr><td colSpan={6}><Empty icon={Boxes} title="Ürün bulunamadı" text="Arama ifadesini veya kategori filtresini değiştirin." /></td></tr>}
         </tbody></table></div>}
       </section>
-      <section className="panel-card movements"><header><div><small>HAREKET GEÇMİŞİ</small><h3>Son işlemler</h3></div></header>{!movements.length ? <Empty title="Hareket bulunmuyor" text="İlk stok işlemi burada görünecek." /> : <div className="movement-list">{movements.slice(0, 12).map((item) => <div key={item.id}><span className={item.quantity >= 0 ? 'plus' : 'minus'}>{item.quantity >= 0 ? '+' : ''}{item.quantity}</span><p><b>{item.product_name}</b><small>{item.note || item.movement_type} · {dateTime(item.created_at)}</small></p><strong>{item.after_quantity}</strong></div>)}</div>}</section>
+      <section className="panel-card movements"><header><div><small>HAREKET GEÇMİŞİ</small><h3>Son işlemler</h3></div></header>{!scopedMovements.length ? <Empty icon={Database} title="Hareket bulunmuyor" text="İlk stok işlemi burada görünecek." /> : <div className="movement-list">{scopedMovements.slice(0, 12).map((item) => <div key={item.id}><span className={item.quantity >= 0 ? 'plus' : 'minus'}>{item.quantity >= 0 ? '+' : ''}{item.quantity}</span><p><b>{item.product_name}</b><small>{item.note || item.movement_type}{item.kiosk_id ? ` · ${item.kiosk_id.toUpperCase()}` : ''} · {dateTime(item.created_at)}</small></p><strong>{item.after_quantity}</strong></div>)}</div>}</section>
     </div>
   </>;
 }
 
-function OrdersView({ orders, loading, onRefresh }: { orders: AdminOrder[]; loading: boolean; onRefresh: () => void }) {
-  return <><PageHeader eyebrow="OPERASYON" title="Siparişler" description="Kiosktan oluşturulan siparişlerin durumunu ve ödeme bilgilerini görüntüle." actions={<button className="secondary" onClick={onRefresh}><RefreshCcw /> Yenile</button>} />
-    <section className="table-card">{loading ? <Loading /> : !orders.length ? <Empty title="Henüz sipariş yok" text="Kiosk siparişleri burada listelenecek." /> : <div className="table-wrap"><table><thead><tr><th>Sipariş</th><th>Tarih</th><th>Tip</th><th>Ödeme</th><th>Ürün</th><th>Tutar</th><th>Durum</th></tr></thead><tbody>{orders.map((order) => <tr key={order.number}><td><strong>{order.number}</strong></td><td>{dateTime(order.created_at)}</td><td>{order.fulfillment === 'restaurant' ? 'Restoranda' : 'Paket'}</td><td>{order.payment_method === 'card' ? 'Banka Kartı' : 'Yemek Kartı'}</td><td>{order.item_count ?? 0} adet</td><td><strong>{money(order.total)}</strong></td><td><span className="status active">Hazırlanıyor</span></td></tr>)}</tbody></table></div>}</section>
+// ---------------------------------------------------------------- Siparişler
+
+const ORDER_STATUS: Record<string, { label: string; tone: string }> = {
+  preparing: { label: 'Hazırlanıyor', tone: 'active' },
+  ready: { label: 'Hazır', tone: 'active' },
+  completed: { label: 'Tamamlandı', tone: 'active' },
+  paid: { label: 'Ödendi', tone: 'active' },
+  cancelled: { label: 'İptal', tone: 'danger' },
+  canceled: { label: 'İptal', tone: 'danger' },
+  failed: { label: 'Başarısız', tone: 'danger' },
+};
+
+function OrdersView({ orders, kiosks, sections, filters, loading, error, onRefresh }: { orders: AdminOrder[]; kiosks: Kiosk[]; sections: Section[]; filters: Filters; loading: boolean; error: string; onRefresh: () => void }) {
+  const [search, setSearch] = useState('');
+  const sectionById = useMemo(() => new Map(sections.map((item) => [item.id, item])), [sections]);
+  const kioskById = useMemo(() => new Map(kiosks.map((item) => [item.id, item])), [kiosks]);
+  // Sunucu filtreyi uygulamasa bile listede tutarlılık için istemcide de süzülür.
+  const filtered = orders.filter((order) => (!filters.kiosk || !order.kioskId || order.kioskId === filters.kiosk)
+    && (!filters.section || !order.sectionIds.length || order.sectionIds.includes(filters.section))
+    && (!search.trim() || order.number.toLocaleLowerCase('tr').includes(search.trim().toLocaleLowerCase('tr'))));
+  const total = filtered.reduce((sum, order) => sum + order.total, 0);
+  return <><PageHeader eyebrow="SATIŞ" title="Siparişler" description={`${filterLabel(filters, kiosks, sections)} · kiosklardan oluşturulan siparişler ve ödeme bilgileri.`} actions={<button className="secondary" onClick={onRefresh}><RefreshCcw /> Yenile</button>} />
+    {error && <ErrorBanner message={error} onRetry={onRefresh} />}
+    <div className="toolbar"><label className="search"><Search /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Sipariş no ara (ör. KHV-0001)" /></label><span>{filtered.length} sipariş · {money(total)}</span></div>
+    <section className="table-card">{loading && !orders.length ? <Skeleton rows={10} /> : !filtered.length ? <Empty icon={ClipboardList} title="Sipariş yok" text="Seçili filtrede sipariş bulunamadı." /> : <div className="table-wrap"><table><thead><tr><th>Sipariş</th><th>Kiosk</th><th>Kategoriler</th><th>Tarih</th><th>Ödeme</th><th>Ürün</th><th>Tutar</th><th>Durum</th></tr></thead><tbody>{filtered.map((order) => {
+      const kiosk = order.kioskId ? kioskById.get(order.kioskId) : undefined;
+      const status = ORDER_STATUS[(order.status || '').toLowerCase()];
+      return <tr key={order.number}><td><strong>{order.number}</strong></td><td>{kiosk ? <span className="cell-stack"><b>{kiosk.name}</b><small>{kiosk.id.toUpperCase()}</small></span> : order.kioskId ? <code>{order.kioskId.toUpperCase()}</code> : <span className="muted">—</span>}</td><td><span className="chip-row">{order.sectionIds.length ? order.sectionIds.map((id) => <SectionChip key={id} section={sectionById.get(id)} fallback={id} compact={order.sectionIds.length > 2} />) : <span className="muted">—</span>}</span></td><td>{dateTime(order.created_at)}</td><td>{order.payment_method === 'meal_card' || order.payment_method === 'meal-card' ? 'Yemek Kartı' : 'Banka Kartı'}</td><td>{order.item_count ?? 0} adet</td><td><strong>{money(order.total)}</strong></td><td><span className={`status ${status?.tone ?? ''}`}>{status?.label ?? (order.status || 'Alındı')}</span></td></tr>;
+    })}</tbody></table></div>}</section>
   </>;
 }
 
-function ReportsView({ report, loading, onLoad }: { report: Report | null; loading: boolean; onLoad: (start: string, end: string) => void }) {
+// ---------------------------------------------------------------- Raporlar
+
+function ReportsView({ report, sections, kiosks, filters, productSection, loading, error, onLoad }: { report: Report | null; sections: Section[]; kiosks: Kiosk[]; filters: Filters; productSection: (productId: string) => string; loading: boolean; error: string; onLoad: (start: string, end: string) => void }) {
   const [start, setStart] = useState(daysAgo(6)); const [end, setEnd] = useState(today());
-  useEffect(() => { onLoad(start, end); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const clearDates = () => {
-    const defaultStart = daysAgo(6);
-    const defaultEnd = today();
-    setStart(defaultStart);
-    setEnd(defaultEnd);
-    onLoad(defaultStart, defaultEnd);
-  };
+  const range = useRef({ start, end });
+  useEffect(() => { onLoad(range.current.start, range.current.end); }, [filters.kiosk, filters.section]); // eslint-disable-line react-hooks/exhaustive-deps
+  const apply = (nextStart: string, nextEnd: string) => { range.current = { start: nextStart, end: nextEnd }; onLoad(nextStart, nextEnd); };
+  const clearDates = () => { const s = daysAgo(6); const e = today(); setStart(s); setEnd(e); apply(s, e); };
+  const sectionById = useMemo(() => new Map(sections.map((item) => [item.id, item])), [sections]);
   const maxRevenue = Math.max(...(report?.daily.map((item) => item.revenue) ?? [1]), 1);
-  return <><PageHeader eyebrow="RAPORLAMA" title="Satış raporları" description="Ciroyu, sipariş ortalamasını ve ürün performansını tarih aralığıyla analiz et." actions={<div className="date-filter"><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /><span>—</span><input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /><button className="secondary compact" onClick={clearDates}>Temizle</button><button className="primary" onClick={() => onLoad(start, end)}>Uygula</button></div>} />
-    {loading && !report ? <Loading /> : <><div className="report-stats"><article><small>TOPLAM CİRO</small><b>{money(report?.summary.revenue ?? 0)}</b><span>Seçili tarih aralığı</span></article><article><small>SİPARİŞ</small><b>{report?.summary.order_count ?? 0}</b><span>Toplam işlem</span></article><article><small>ORTALAMA SEPET</small><b>{money(report?.summary.average_order ?? 0)}</b><span>Sipariş başına</span></article></div>
-      <div className="report-layout"><section className="panel-card chart-card"><header><div><small>CİRO GÖRÜNÜMÜ</small><h3>Günlük satış</h3></div></header>{!report?.daily.length ? <Empty title="Bu aralıkta satış yok" text="Farklı bir tarih aralığı deneyin." /> : <div className="bar-chart">{report.daily.map((item) => <div key={item.day}><span><i style={{ height: `${Math.max(8, item.revenue / maxRevenue * 100)}%` }} /></span><b>{money(item.revenue)}</b><small>{new Date(`${item.day}T12:00:00`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}</small></div>)}</div>}</section>
-      <section className="table-card"><div className="card-toolbar"><div><small>ÜRÜN PERFORMANSI</small><h3>En çok satanlar</h3></div></div>{!report?.products.length ? <Empty title="Ürün satışı yok" text="Siparişler geldikçe performans burada oluşur." /> : <div className="table-wrap"><table><thead><tr><th>Ürün</th><th>Kategori</th><th>Adet</th><th>Ciro</th></tr></thead><tbody>{report.products.map((product) => <tr key={product.product_id}><td><b>{product.name}</b></td><td><span className="tag">{product.category}</span></td><td>{product.quantity}</td><td><strong>{money(product.revenue)}</strong></td></tr>)}</tbody></table></div>}</section></div></>}
+  const bySection = useMemo(() => {
+    const totals = new Map<string, { revenue: number; quantity: number }>();
+    report?.products.forEach((row) => {
+      const id = productSection(row.product_id);
+      const current = totals.get(id) ?? { revenue: 0, quantity: 0 };
+      totals.set(id, { revenue: current.revenue + row.revenue, quantity: current.quantity + row.quantity });
+    });
+    return [...totals.entries()].map(([id, value]) => ({ id, section: sectionById.get(id), ...value })).sort((a, b) => b.revenue - a.revenue);
+  }, [report, productSection, sectionById]);
+  const maxSection = Math.max(1, ...bySection.map((row) => row.revenue));
+  return <><PageHeader eyebrow="SATIŞ" title="Raporlar" description={`${filterLabel(filters, kiosks, sections)} · ciro, sipariş ortalaması ve ürün performansı.`} actions={<div className="date-filter"><input type="date" value={start} onChange={(e) => setStart(e.target.value)} aria-label="Başlangıç" /><span>—</span><input type="date" value={end} onChange={(e) => setEnd(e.target.value)} aria-label="Bitiş" /><button className="secondary compact" onClick={clearDates}>Son 7 gün</button><button className="primary" onClick={() => apply(start, end)}>Uygula</button></div>} />
+    {error && <ErrorBanner message={error} onRetry={() => apply(start, end)} />}
+    {loading && !report ? <><Skeleton variant="cards" rows={3} /><div className="spacer" /><Skeleton rows={6} /></> : <><div className="report-stats"><article><small>TOPLAM CİRO</small><b>{money(report?.summary.revenue ?? 0)}</b><span>Seçili tarih aralığı</span></article><article><small>SİPARİŞ</small><b>{report?.summary.order_count ?? 0}</b><span>Toplam işlem</span></article><article><small>ORTALAMA SEPET</small><b>{money(report?.summary.average_order ?? 0)}</b><span>Sipariş başına</span></article></div>
+      <div className="report-layout"><section className="panel-card chart-card"><header><div><small>CİRO GÖRÜNÜMÜ</small><h3>Günlük satış</h3></div></header>{!report?.daily.length ? <Empty icon={BarChart3} title="Bu aralıkta satış yok" text="Farklı bir tarih aralığı veya filtre deneyin." /> : <div className="bar-chart">{report.daily.map((item) => <div key={item.day} title={`${item.order_count} sipariş`}><span><i style={{ height: `${Math.max(8, item.revenue / maxRevenue * 100)}%` }} /></span><b>{money(item.revenue)}</b><small>{new Date(`${item.day}T12:00:00`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}</small></div>)}</div>}</section>
+        <section className="panel-card"><header><div><small>KATEGORİ DAĞILIMI</small><h3>Ana kategoriye göre ciro</h3></div></header>{!bySection.length ? <Empty icon={LayoutGrid} title="Kategori verisi yok" text="Siparişler geldikçe dağılım burada oluşur." /> : <div className="hbar-list">{bySection.map((row) => <div className="hbar" key={row.id || 'none'} style={accentStyle(row.section?.accent)}><span className="hbar__label"><SectionIcon name={row.section?.icon} /><b>{row.section?.name ?? (row.id || 'Bilinmiyor')}</b></span><span className="hbar__track"><i style={{ width: `${Math.max(2, (row.revenue / maxSection) * 100)}%` }} /></span><span className="hbar__value"><b>{money(row.revenue)}</b><small>{row.quantity} adet</small></span></div>)}</div>}</section></div>
+      <section className="table-card report-products"><div className="card-toolbar"><div><small>ÜRÜN PERFORMANSI</small><h3>En çok satanlar</h3></div></div>{!report?.products.length ? <Empty icon={ShoppingBag} title="Ürün satışı yok" text="Siparişler geldikçe performans burada oluşur." /> : <div className="table-wrap"><table><thead><tr><th>Ürün</th><th>Kategori</th><th>Alt kategori</th><th>Adet</th><th>Ciro</th></tr></thead><tbody>{report.products.map((product) => <tr key={product.product_id}><td><b>{product.name}</b></td><td><SectionChip section={sectionById.get(productSection(product.product_id))} fallback="—" /></td><td><span className="tag">{product.category || '—'}</span></td><td>{product.quantity}</td><td><strong>{money(product.revenue)}</strong></td></tr>)}</tbody></table></div>}</section></>}
   </>;
 }
 
-const emptyPosDraft = (): PosDeviceDraft => ({
-  name: '', providerType: 'PAVO_CLOUD', serialNumber: 'PAV960000010', ipAddress: null,
-  port: null, status: 'ACTIVE', isDefault: true,
-});
+// ---------------------------------------------------------------- Ayarlar
 
-function PosDeviceModal({ device, onClose, onSaved }: {
-  device: PosDevice | null;
-  onClose: () => void;
-  onSaved: (message: string) => void;
-}) {
-  const [draft, setDraft] = useState<PosDeviceDraft>(() => device ? {
-    name: device.name,
-    providerType: device.providerType,
-    serialNumber: device.serialNumber,
-    ipAddress: device.ipAddress,
-    port: device.port,
-    status: device.status,
-    isDefault: device.isDefault,
-  } : emptyPosDraft());
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const set = <K extends keyof PosDeviceDraft>(key: K, value: PosDeviceDraft[K]) => {
-    setDraft((current) => ({ ...current, [key]: value }));
-  };
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setSaving(true);
-    setError('');
-    try {
-      if (device) await api.updatePosDevice(device.id, draft);
-      else await api.createPosDevice(draft);
-      onSaved(device ? 'POS terminali güncellendi.' : 'POS terminali eklendi.');
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Terminal kaydedilemedi.');
-    } finally {
-      setSaving(false);
-    }
-  };
-  return <Modal title={device ? 'Terminali düzenle' : 'Yeni POS terminali'} subtitle="POS YÖNETİMİ" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>Vazgeç</button><button className="primary" type="submit" form="pos-device-form" disabled={saving}>{saving ? <Loader2 className="spin" /> : <Check />} Kaydet</button></>}>
-    <form id="pos-device-form" className="form-stack" onSubmit={submit}>
-      {error && <div className="form-error">{error}</div>}
-      <label><span>Terminal adı</span><input required value={draft.name} onChange={(event) => set('name', event.target.value)} placeholder="Ön Kasa POS" /></label>
-      <div className="pos-provider-card"><Cloud /><div><b>Pavo Cloud</b><small>Kebo ödeme backend'i üzerinden bağlanır</small></div><span>AKTİF ENTEGRASYON</span></div>
-      <label><span>Terminal seri numarası</span><input required readOnly value={draft.serialNumber ?? ''} /></label>
-      <label><span>Terminal durumu</span><select value={draft.status} onChange={(event) => set('status', event.target.value as PosDeviceDraft['status'])}><option value="ACTIVE">Aktif</option><option value="MAINTENANCE">Bakımda</option><option value="PASSIVE">Pasif</option></select></label>
-      <label className="switch-line"><span><b>Tanımlı ödeme terminali</b><small>Kiosk ödemeleri yalnızca bu cihazla çalışır.</small></span><input type="checkbox" checked={draft.isDefault} disabled /></label>
-    </form>
-  </Modal>;
-}
-
-function PosPairModal({ device, onClose, onPaired }: {
-  device: PosDevice;
-  onClose: () => void;
-  onPaired: (message: string) => void;
-}) {
-  const [fingerprint] = useState('TEST');
-  const [pairing, setPairing] = useState<{ id: number; code: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const start = async () => {
-    if (!fingerprint.trim()) return;
-    setBusy(true);
-    setError('');
-    try {
-      const result = await api.pairPosDevice(device.id, fingerprint);
-      if (!result.pairingId || !result.pairingCode) throw new Error(result.message || 'Eşleştirme kodu alınamadı.');
-      setPairing({ id: result.pairingId, code: result.pairingCode });
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Eşleştirme başlatılamadı.');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const check = useCallback(async (manual = false) => {
-    if (!pairing) return;
-    if (manual) setBusy(true);
-    if (manual) setError('');
-    try {
-      const result = await api.checkPosPairing(device.id, pairing.id);
-      if (result.approved) onPaired('Terminal başarıyla eşleştirildi ve aktif edildi.');
-      else if (manual) setError('Terminal onayı henüz gelmedi. POS ekranında kodu onaylayıp tekrar deneyin.');
-    } catch (reason) {
-      if (manual) setError(reason instanceof Error ? reason.message : 'Eşleştirme kontrol edilemedi.');
-    } finally {
-      if (manual) setBusy(false);
-    }
-  }, [device.id, onPaired, pairing]);
-  useEffect(() => {
-    if (!pairing) return;
-    let checking = false;
-    const timer = window.setInterval(async () => {
-      if (checking) return;
-      checking = true;
-      try { await check(false); } finally { checking = false; }
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [check, pairing]);
-  return <Modal title="Cloud Eşleştirme" subtitle="PAVO CLOUD" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>{pairing ? 'İptal Et' : 'Vazgeç'}</button>{!pairing ? <button className="primary" onClick={start} disabled={busy}>{busy ? <Loader2 className="spin" /> : <Cloud />} Eşleştir</button> : <button className="primary" onClick={() => { void check(true); }} disabled={busy}>{busy ? <Loader2 className="spin" /> : <RefreshCcw />} Şimdi Kontrol Et</button>}</>}>
-    <div className="pairing-content"><Cloud /><div className="pairing-device"><Cloud /><span><b>{device.name}</b><small>{device.serialNumber}</small></span><strong>PAVO CLOUD</strong></div>{pairing ? <><h3>POS Onayı Bekleniyor</h3><p>Aşağıdaki 6 haneli kodu POS cihazındaki ilgili alana girip onaylayın:</p><strong className="pairing-code">{pairing.code}</strong><small><Loader2 className="spin" /> Cihaz onayı her 3 saniyede kontrol ediliyor...</small></> : <><h3>Cloud Eşleştirme</h3><p>MagicCoffee için tanımlı source fingerprint kullanılır.</p><label className="pairing-input"><span>Source fingerprint</span><input value={fingerprint} readOnly /><small>Bu kimlik yalnızca MagicCoffee ödeme akışına aittir.</small></label></>}{error && <div className="form-error">{error}</div>}</div>
-  </Modal>;
-}
-
-function PosTerminalsView({ notify }: { notify: (message: string) => void }) {
-  const [devices, setDevices] = useState<PosDevice[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setDevices(await api.posDevices());
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Terminaller yüklenemedi.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
-  const reload = async () => { await load(); notify('Terminal bilgisi yenilendi.'); };
-  return <><PageHeader eyebrow="SİSTEM" title="POS terminali" description="Kioskun ödeme göndereceği mevcut Kebo Pavo Cloud terminalini görüntüle." actions={<button className="secondary" onClick={() => { void reload(); }}><RefreshCcw /> Yenile</button>} />
-    <div className="pos-stats"><article><CreditCard /><div><small>TOPLAM TERMİNAL</small><b>{devices.length}</b></div></article><article><Activity /><div><small>AKTİF</small><b>{devices.filter((item) => item.status === 'ACTIVE').length}</b></div></article><article><ShieldCheck /><div><small>EŞLEŞMİŞ</small><b>{devices.filter((item) => item.paired).length}</b></div></article></div>
-    {error && <div className="form-error pos-page-error">{error}</div>}
-    <section className="table-card">{loading ? <Loading /> : !devices.length ? <Empty title="POS terminali bulunamadı" text="Tanımlı Kebo Pavo Cloud terminali şu anda alınamıyor." /> : <div className="table-wrap"><table className="pos-table"><thead><tr><th>Terminal</th><th>Sağlayıcı</th><th>Seri No</th><th>Eşleşme</th><th>Durum</th><th>Ödeme</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><div className="terminal-cell"><span><CreditCard /></span><div><b>{device.name}</b><small>Tanımlı terminal</small></div></div></td><td><span className="tag">Pavo Cloud</span></td><td><code>{device.serialNumber || '-'}</code></td><td><span className={`pair-status ${device.paired ? 'paired' : ''}`}>{device.paired ? <><ShieldCheck /> Eşleşti</> : 'Eşleşmedi'}</span></td><td><span className={`status ${device.status === 'ACTIVE' ? 'active' : ''}`}>{device.status === 'ACTIVE' ? 'Aktif' : device.status === 'MAINTENANCE' ? 'Bakımda' : 'Pasif'}</span></td><td>{device.status === 'ACTIVE' && device.paired ? <span className="default-terminal">Hazır</span> : <span className="muted">Kapalı</span>}</td></tr>)}</tbody></table></div>}</section>
-  </>;
-}
-
-function SettingsView({ apiOnline, dark, onToggleDark }: { apiOnline: boolean; dark: boolean; onToggleDark: () => void }) {
-  const backendLabel = API_BASE_URL || 'Yerel proxy';
-  return <><PageHeader eyebrow="SİSTEM" title="Panel ayarları" description="Magic Coffee yönetim ortamının temel bağlantılarını ve görünümünü kontrol et." />
-    <div className="settings-grid"><section className="panel-card"><header><div><small>SERVİS DURUMU</small><h3>Magic Coffee API</h3></div><span className={`health-dot ${apiOnline ? 'online' : ''}`} /></header><p>Panel ve kiosk aynı merkezi katalog ve sipariş servisini kullanır.</p><div className="setting-line"><span><Database /><div><b>Backend bağlantısı</b><small>{backendLabel}</small></div></span><strong>{apiOnline ? 'Çevrimiçi' : 'Çevrimdışı'}</strong></div></section>
+function SettingsView({ apiOnline, dark, kiosks, sections, devices, onToggleDark, onRefresh }: { apiOnline: boolean; dark: boolean; kiosks: Kiosk[]; sections: Section[]; devices: CastlesDevice[]; onToggleDark: () => void; onRefresh: () => void }) {
+  const backendLabel = API_BASE_URL || 'Panel proxy (göreli /api)';
+  return <><PageHeader eyebrow="SİSTEM" title="Ayarlar" description="MagicPay Kiosk yönetim ortamının bağlantı durumunu ve görünümünü kontrol et." />
+    <div className="settings-grid">
+      <section className="panel-card"><header><div><small>SERVİS DURUMU</small><h3>MagicPay Kiosk API</h3></div><span className={`health-dot ${apiOnline ? 'online' : ''}`} /></header><p>17 kiosk ve panel aynı merkezi katalog, sipariş ve ödeme servisini kullanır.</p><button className="setting-line clickable" onClick={onRefresh}><span><Database /><div><b>Backend bağlantısı</b><small>{backendLabel}</small></div></span><strong className={apiOnline ? '' : 'offline'}>{apiOnline ? 'Çevrimiçi' : 'Çevrimdışı'}</strong></button></section>
       <section className="panel-card"><header><div><small>GÖRÜNÜM</small><h3>Tema tercihi</h3></div></header><p>Panel görünümünü çalışma ortamına göre değiştir.</p><button className="setting-line clickable" onClick={onToggleDark}><span>{dark ? <Moon /> : <Sun />}<div><b>{dark ? 'Karanlık mod' : 'Aydınlık mod'}</b><small>Değiştirmek için tıkla</small></div></span><ChevronRight /></button></section>
-      <section className="panel-card"><header><div><small>KİOSK</small><h3>Canlı menü</h3></div></header><p>Panelde yaptığın değişiklikleri kiosk ekranında kontrol et.</p><a className="setting-line clickable" href={KIOSK_URL} target="_blank" rel="noreferrer"><span><ExternalLink /><div><b>Kiosku aç</b><small>Yeni sekmede görüntüle</small></div></span><ChevronRight /></a></section></div>
+      <section className="panel-card"><header><div><small>PLATFORM</small><h3>Özet</h3></div></header><p>Kurulu kiosk, kategori ve ödeme cihazı sayıları.</p><div className="setting-line"><span><MonitorSmartphone /><div><b>{kiosks.length} kiosk · {sections.length} ana kategori</b><small>{devices.length} Castles POS cihazı · ödeme: CasPro</small></div></span><Activity /></div></section>
+    </div>
   </>;
 }
+
+// ---------------------------------------------------------------- Uygulama kabuğu
+
+type LoadKey = 'core' | 'dashboard' | 'kiosks' | 'devices' | 'stock' | 'orders' | 'reports';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<ViewKey>('dashboard');
+  const [activeView, setActiveView] = useState<ViewKey>(readView);
   const [mobileNav, setMobileNav] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem('magic-panel-theme') === 'dark');
+  const [filters, setFilters] = useState<Filters>(readFilters);
   const [apiOnline, setApiOnline] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<Partial<Record<LoadKey, boolean>>>({});
+  const [errors, setErrors] = useState<Partial<Record<LoadKey, string>>>({});
   const [message, setMessage] = useState('');
+  const [now, setNow] = useState(() => Date.now());
+  const [sections, setSections] = useState<Section[]>([]);
+  const [kiosks, setKiosks] = useState<Kiosk[]>([]);
+  const [devices, setDevices] = useState<CastlesDevice[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [stockItems, setStockItems] = useState<Product[]>([]);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [sectionFallback, setSectionFallback] = useState<DashboardSectionRow[]>([]);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [report, setReport] = useState<Report | null>(null);
 
   const notify = useCallback((value: string) => { setMessage(value); window.setTimeout(() => setMessage(''), 2800); }, []);
-  const loadCore = useCallback(async () => { setLoading(true); try { const [health, categoryData, productData] = await Promise.all([api.health(), api.categories(), api.products()]); setApiOnline(health.status === 'ok'); setCategories(categoryData); setProducts(productData); } catch { setApiOnline(false); } finally { setLoading(false); } }, []);
-  const loadDashboard = useCallback(async () => { setLoading(true); try { setDashboard(await api.dashboard()); } finally { setLoading(false); } }, []);
-  const loadStock = useCallback(async () => { setLoading(true); try { const [stock, history] = await Promise.all([api.stock(), api.stockMovements()]); setProducts(stock); setMovements(history); } finally { setLoading(false); } }, []);
-  const loadOrders = useCallback(async () => { setLoading(true); try { setOrders(await api.orders()); } finally { setLoading(false); } }, []);
-  const loadReports = useCallback(async (start: string, end: string) => { setLoading(true); try { setReport(await api.reports(start, end)); } finally { setLoading(false); } }, []);
-  useEffect(() => { loadCore(); loadDashboard(); }, [loadCore, loadDashboard]);
+  const track = useCallback(async <T,>(key: LoadKey, task: () => Promise<T>): Promise<T | undefined> => {
+    setLoading((current) => ({ ...current, [key]: true }));
+    setErrors((current) => ({ ...current, [key]: '' }));
+    try { return await task(); }
+    catch (err) { setErrors((current) => ({ ...current, [key]: (err as Error).message })); return undefined; }
+    finally { setLoading((current) => ({ ...current, [key]: false })); }
+  }, []);
+
+  const categoryById = useMemo(() => new Map(categories.map((item) => [item.id, item])), [categories]);
+  // Ürünlerde sectionId yoksa alt kategoriden türetilir.
+  const withSection = useCallback((list: Product[]) => list.map((item) => item.sectionId ? item : { ...item, sectionId: categoryById.get(item.categoryId)?.sectionId ?? '' }), [categoryById]);
+  const productSectionMap = useMemo(() => new Map(withSection(products).map((item) => [item.id, item.sectionId])), [products, withSection]);
+  const productSection = useCallback((id: string) => productSectionMap.get(id) ?? '', [productSectionMap]);
+
+  const loadCore = useCallback(() => track('core', async () => {
+    const health = await api.health().catch(() => null);
+    setApiOnline(health?.status === 'ok');
+    const [sectionData, categoryData, productData] = await Promise.all([api.sections(), api.categories(), api.products()]);
+    setSections(sectionData); setCategories(categoryData); setProducts(productData);
+  }), [track]);
+  const loadKiosks = useCallback(() => track('kiosks', async () => setKiosks(await api.kiosks())), [track]);
+  const loadDevices = useCallback(() => track('devices', async () => setDevices(await api.devices())), [track]);
+  const loadDashboard = useCallback(() => track('dashboard', async () => {
+    const data = await api.dashboard(filters);
+    setDashboard(data);
+    if (!data.sections.length) {
+      // API kategori özeti döndürmezse bugünkü rapordan ürün → ana kategori eşlemesiyle hesaplanır.
+      const todayReport = await api.reports(today(), today(), filters).catch(() => null);
+      const totals = new Map<string, number>();
+      todayReport?.products.forEach((row) => { const id = productSection(row.product_id); totals.set(id, (totals.get(id) ?? 0) + row.revenue); });
+      setSectionFallback([...totals.entries()].map(([sectionId, revenue]) => ({ sectionId, revenue, orderCount: 0 })));
+    } else setSectionFallback([]);
+  }), [track, filters, productSection]);
+  const loadStock = useCallback(() => track('stock', async () => {
+    const [stock, history] = await Promise.all([api.stock(filters.section || undefined), api.stockMovements(filters.section || undefined)]);
+    setStockItems(stock); setMovements(history);
+  }), [track, filters.section]);
+  const loadOrders = useCallback(() => track('orders', async () => setOrders(await api.orders(filters))), [track, filters]);
+  const loadReports = useCallback((start: string, end: string) => { void track('reports', async () => setReport(await api.reports(start, end, filters))); }, [track, filters]);
+
+  const loadView = useCallback((view: ViewKey) => {
+    if (view === 'dashboard') { void loadDashboard(); void loadKiosks(); }
+    if (view === 'kiosks') { void loadKiosks(); void loadDevices(); }
+    if (view === 'pos-devices') { void loadDevices(); void loadKiosks(); }
+    if (view === 'stock') void loadStock();
+    if (view === 'orders') void loadOrders();
+  }, [loadDashboard, loadKiosks, loadDevices, loadStock, loadOrders]);
+
+  useEffect(() => { void loadCore(); void loadKiosks(); void loadDevices(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Görünüm veya filtre değişince ilgili veriyi yeniden yükle.
+  useEffect(() => { loadView(activeView); }, [activeView, filters]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Çevrimiçi rozetleri için kiosk listesi 30 sn'de bir tazelenir.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+      if (document.visibilityState === 'visible' && (activeView === 'dashboard' || activeView === 'kiosks')) void api.kiosks().then(setKiosks).catch(() => undefined);
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [activeView]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; localStorage.setItem('magic-panel-theme', dark ? 'dark' : 'light'); }, [dark]);
-  const navigate = (view: ViewKey) => { setActiveView(view); setMobileNav(false); if (view === 'dashboard') loadDashboard(); if (view === 'orders') loadOrders(); if (view === 'stock') loadStock(); };
-  const refreshCore = async () => { await loadCore(); notify('Veriler yenilendi.'); };
-  const createProduct = async (draft: ProductDraft) => { await api.createProduct(draft); await loadCore(); notify('Ürün oluşturuldu ve kioska eklendi.'); };
-  const updateProduct = async (id: string, draft: ProductDraft) => { await api.updateProduct(id, draft); await loadCore(); notify('Ürün güncellendi.'); };
-  const deleteProduct = async (id: string) => { await api.deleteProduct(id); await loadCore(); notify('Ürün silindi.'); };
-  const createCategory = async (value: Partial<Category>) => { await api.createCategory(value); await loadCore(); notify('Kategori oluşturuldu.'); };
-  const updateCategory = async (id: string, value: Partial<Category>) => { await api.updateCategory(id, value); await loadCore(); notify('Kategori güncellendi.'); };
-  const deleteCategory = async (id: string, deleteProducts = false) => { await api.deleteCategory(id, deleteProducts); await loadCore(); notify('Kategori silindi.'); };
-  const reorderCategories = async (ids: string[]) => { const ordered = ids.map((id, position) => ({ ...categories.find((item) => item.id === id)!, position })); setCategories(ordered); try { await api.reorderCategories(ids); notify('Kategori sırası güncellendi.'); } catch { await loadCore(); } };
+  useEffect(() => { localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters)); }, [filters]);
+  useEffect(() => { localStorage.setItem(VIEW_STORAGE_KEY, activeView); }, [activeView]);
+  // Kalıcı filtrede artık var olmayan bir kiosk/kategori kaldıysa temizle.
+  useEffect(() => {
+    setFilters((current) => {
+      const kioskGone = current.kiosk && kiosks.length && !kiosks.some((item) => item.id === current.kiosk);
+      const sectionGone = current.section && sections.length && !sections.some((item) => item.id === current.section);
+      return kioskGone || sectionGone ? { kiosk: kioskGone ? '' : current.kiosk, section: sectionGone ? '' : current.section } : current;
+    });
+  }, [kiosks, sections]);
+
+  const navigate = (view: ViewKey) => { setActiveView(view); setMobileNav(false); window.scrollTo({ top: 0 }); };
+  const changeFilters = (patch: Partial<Filters>) => setFilters((current) => ({ ...current, ...patch }));
+
+  // Kiosklar ve cihazlar
+  const updateKiosk = async (id: string, payload: KioskUpdate) => {
+    const updated = await api.updateKiosk(id, payload);
+    setKiosks((current) => current.map((item) => item.id === id ? { ...item, ...updated, online: updated.online || item.online, todayOrderCount: updated.todayOrderCount || item.todayOrderCount, todayRevenue: updated.todayRevenue || item.todayRevenue } : item));
+    void loadDevices();
+    notify('posSerial' in payload || 'featuredSectionId' in payload || 'name' in payload ? 'Kiosk güncellendi.' : payload.active ? 'Kiosk aktifleştirildi.' : 'Kiosk pasifleştirildi.');
+  };
+  const createDevice = async (draft: CastlesDeviceDraft) => { await api.createDevice(draft); await loadDevices(); notify('Castles cihazı eklendi.'); };
+  const updateDevice = async (serial: string, draft: Partial<Omit<CastlesDeviceDraft, 'serial'>>) => { await api.updateDevice(serial, draft); await loadDevices(); notify('Cihaz güncellendi.'); };
+  const deleteDevice = async (serial: string) => { await api.deleteDevice(serial); await Promise.all([loadDevices(), loadKiosks()]); notify('Cihaz silindi.'); };
+
+  // Ana kategoriler
+  const refreshSections = async () => setSections(await api.sections());
+  const createSection = async (draft: SectionDraft) => { await api.createSection(draft); await refreshSections(); notify('Ana kategori oluşturuldu.'); };
+  const updateSection = async (id: string, draft: Partial<SectionDraft>) => { await api.updateSection(id, draft); await refreshSections(); notify('Ana kategori güncellendi.'); };
+  const deleteSection = async (id: string) => { await api.deleteSection(id); await refreshSections(); notify('Ana kategori silindi.'); };
+  const reorderSections = async (ids: string[]) => {
+    const previous = sections;
+    setSections(ids.map((id, position) => ({ ...sections.find((item) => item.id === id)!, position })));
+    try { await api.reorderSections(ids); notify('Kategori sırası güncellendi.'); }
+    catch (err) { setSections(previous); throw err; }
+  };
+
+  // Ürünler ve alt kategoriler
+  const refreshCatalog = async () => { await loadCore(); };
+  const createProduct = async (draft: ProductDraft) => { await api.createProduct(draft); await refreshCatalog(); notify('Ürün oluşturuldu ve kiosklara eklendi.'); };
+  const updateProduct = async (id: string, draft: ProductDraft) => { await api.updateProduct(id, draft); await refreshCatalog(); notify('Ürün güncellendi.'); };
+  const deleteProduct = async (id: string) => { await api.deleteProduct(id); await refreshCatalog(); notify('Ürün silindi.'); };
+  const createCategory = async (value: Partial<Category>) => { await api.createCategory(value); await refreshCatalog(); notify('Alt kategori oluşturuldu.'); };
+  const updateCategory = async (id: string, value: Partial<Category>) => { await api.updateCategory(id, value); await refreshCatalog(); notify('Alt kategori güncellendi.'); };
+  const deleteCategory = async (id: string, deleteProducts = false) => { await api.deleteCategory(id, deleteProducts); await refreshCatalog(); notify('Alt kategori silindi.'); };
+  const reorderCategories = async (ids: string[]) => { setCategories(ids.map((id, position) => ({ ...categories.find((item) => item.id === id)!, position }))); try { await api.reorderCategories(ids); notify('Alt kategori sırası güncellendi.'); } catch { await loadCore(); } };
   const adjustStock = async (id: string, payload: { mode: 'set' | 'add' | 'remove'; quantity: number; note: string }) => { await api.adjustStock(id, payload); await loadStock(); notify('Stok hareketi kaydedildi.'); };
   const updateStockSettings = async (id: string, payload: { stockTrackingEnabled?: boolean; stockSellable?: boolean }) => { await api.updateStockSettings(id, payload); await loadStock(); notify(payload.stockTrackingEnabled === true ? 'Stok takibi açıldı.' : payload.stockTrackingEnabled === false ? 'Stok takibi kapatıldı.' : payload.stockSellable === false ? 'Ürün anlık satışa kapatıldı.' : 'Ürün yeniden satışa açıldı.'); };
+
   const viewTitle = navGroups.flatMap((group) => group.items).find((item) => item.key === activeView)?.label ?? '';
+  const onlineCount = kiosks.filter((item) => item.online).length;
+  const noPosCount = kiosks.filter((item) => !item.posSerial).length;
+  const coreLoading = Boolean(loading.core);
+  const coreError = errors.core ?? '';
+
   return <div className="app">
-    <header className="topbar"><button className="mobile-menu" aria-label={mobileNav ? 'Menüyü kapat' : 'Menüyü aç'} aria-expanded={mobileNav} onClick={() => setMobileNav((value) => !value)}><MenuIcon /></button><Brand /><div className="top-actions"><span className={`api-pill ${apiOnline ? 'online' : ''}`}><Activity /> Backend: {apiOnline ? 'online' : 'offline'}</span><a href={KIOSK_URL} target="_blank" rel="noreferrer"><ExternalLink /> Kiosku Aç</a><button onClick={() => setDark((value) => !value)}>{dark ? <Sun /> : <Moon />}{dark ? 'Aydınlık Mod' : 'Karanlık Mod'}</button><span className="avatar">MC</span></div></header>
+    <header className="topbar"><button className="mobile-menu" aria-label={mobileNav ? 'Menüyü kapat' : 'Menüyü aç'} aria-expanded={mobileNav} onClick={() => setMobileNav((value) => !value)}><MenuIcon /></button><Brand /><div className="top-actions"><span className={`api-pill ${apiOnline ? 'online' : ''}`}><Activity /> API: {apiOnline ? 'çevrimiçi' : 'çevrimdışı'}</span>{kiosks.length > 0 && <button className="kiosk-pill" onClick={() => navigate('kiosks')} title="Kiosk durumları"><MonitorSmartphone /> {onlineCount}/{kiosks.length} çevrimiçi{noPosCount ? <em>{noPosCount} POS yok</em> : null}</button>}<button onClick={() => setDark((value) => !value)}>{dark ? <Sun /> : <Moon />}{dark ? 'Aydınlık Mod' : 'Karanlık Mod'}</button><span className="avatar">MP</span></div></header>
     {mobileNav && <button type="button" className="mobile-nav-backdrop" onClick={() => setMobileNav(false)} aria-label="Menüyü kapat" />}
-    <aside className={`sidebar ${mobileNav ? 'open' : ''}`}><div className="sidebar-title">Magic Coffee Panel</div><nav>{navGroups.map((group) => <section key={group.label}><small>{group.label}</small>{group.items.map((item) => <button className={activeView === item.key ? 'active' : ''} key={item.key} onClick={() => navigate(item.key)}><item.icon /><span>{item.label}</span><ChevronRight /></button>)}</section>)}</nav></aside>
-    <main className="content"><div className="mobile-title">{viewTitle}</div>{activeView === 'dashboard' && <DashboardView data={dashboard} loading={loading} onRefresh={loadDashboard} onNavigate={navigate} />}{activeView === 'products' && <ProductsView products={products} categories={categories} loading={loading} onRefresh={refreshCore} onCreate={createProduct} onUpdate={updateProduct} onDelete={deleteProduct} />}{activeView === 'categories' && <CategoriesView categories={categories} loading={loading} onCreate={createCategory} onUpdate={updateCategory} onDelete={deleteCategory} onReorder={reorderCategories} />}{activeView === 'stock' && <StockView products={products} movements={movements} loading={loading} onRefresh={loadStock} onAdjust={adjustStock} onSettings={updateStockSettings} />}{activeView === 'orders' && <OrdersView orders={orders} loading={loading} onRefresh={loadOrders} />}{activeView === 'reports' && <ReportsView report={report} loading={loading} onLoad={loadReports} />}{activeView === 'pos-terminals' && <PosTerminalsView notify={notify} />}{activeView === 'settings' && <SettingsView apiOnline={apiOnline} dark={dark} onToggleDark={() => setDark((value) => !value)} />}</main>
+    <aside className={`sidebar ${mobileNav ? 'open' : ''}`}><div className="sidebar-title">Kiosk Yönetimi</div><nav>{navGroups.map((group) => <section key={group.label}><small>{group.label}</small>{group.items.map((item) => <button className={activeView === item.key ? 'active' : ''} key={item.key} onClick={() => navigate(item.key)}><item.icon /><span>{item.label}{item.key === 'sections' && sections.length ? <em className="nav-count">{sections.length}</em> : null}{item.key === 'kiosks' && noPosCount ? <em className="nav-count warn" title="POS atanmamış kiosk">{noPosCount}</em> : null}</span><ChevronRight /></button>)}</section>)}</nav></aside>
+    <main className="content">
+      <div className="mobile-title">{viewTitle}</div>
+      <FilterBar view={activeView} filters={filters} kiosks={kiosks} sections={sections} onChange={changeFilters} />
+      {activeView === 'dashboard' && <DashboardView data={dashboard} kiosks={kiosks} sections={sections} filters={filters} sectionFallback={sectionFallback} loading={Boolean(loading.dashboard)} error={errors.dashboard ?? ''} now={now} onRefresh={() => loadView('dashboard')} onNavigate={navigate} onFilter={changeFilters} />}
+      {activeView === 'kiosks' && <KiosksView kiosks={kiosks} sections={sections} devices={devices} loading={Boolean(loading.kiosks)} error={errors.kiosks ?? ''} now={now} onRefresh={() => loadView('kiosks')} onUpdate={updateKiosk} />}
+      {activeView === 'sections' && <SectionsView sections={sections} loading={coreLoading} error={coreError} onRefresh={() => void loadCore()} onCreate={createSection} onUpdate={updateSection} onDelete={deleteSection} onReorder={reorderSections} />}
+      {activeView === 'categories' && <CategoriesView categories={categories} sections={sections} filters={filters} loading={coreLoading} error={coreError} onRefresh={() => void loadCore()} onCreate={createCategory} onUpdate={updateCategory} onDelete={deleteCategory} onReorder={reorderCategories} />}
+      {activeView === 'products' && <ProductsView products={withSection(products)} sections={sections} categories={categories} filters={filters} loading={coreLoading} error={coreError} onRefresh={() => void loadCore().then(() => notify('Veriler yenilendi.'))} onCreate={createProduct} onUpdate={updateProduct} onDelete={deleteProduct} />}
+      {activeView === 'stock' && <StockView products={withSection(stockItems)} movements={movements} sections={sections} filters={filters} loading={Boolean(loading.stock)} error={errors.stock ?? ''} onRefresh={() => void loadStock()} onAdjust={adjustStock} onSettings={updateStockSettings} />}
+      {activeView === 'orders' && <OrdersView orders={orders} kiosks={kiosks} sections={sections} filters={filters} loading={Boolean(loading.orders)} error={errors.orders ?? ''} onRefresh={() => void loadOrders()} />}
+      {activeView === 'reports' && <ReportsView report={report} sections={sections} kiosks={kiosks} filters={filters} productSection={productSection} loading={Boolean(loading.reports)} error={errors.reports ?? ''} onLoad={loadReports} />}
+      {activeView === 'pos-devices' && <DevicesView devices={devices} kiosks={kiosks} sections={sections} loading={Boolean(loading.devices)} error={errors.devices ?? ''} onRefresh={() => loadView('pos-devices')} onCreate={createDevice} onUpdate={updateDevice} onDelete={deleteDevice} onOpenKiosks={() => navigate('kiosks')} />}
+      {activeView === 'settings' && <SettingsView apiOnline={apiOnline} dark={dark} kiosks={kiosks} sections={sections} devices={devices} onToggleDark={() => setDark((value) => !value)} onRefresh={() => void loadCore()} />}
+    </main>
     {message && <div className="toast"><Check />{message}</div>}
   </div>;
 }
-
-
-

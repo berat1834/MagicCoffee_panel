@@ -1,41 +1,74 @@
-export type ViewKey = 'dashboard' | 'products' | 'categories' | 'stock' | 'orders' | 'reports' | 'pos-terminals' | 'settings';
+export type ViewKey = 'dashboard' | 'kiosks' | 'sections' | 'categories' | 'products' | 'stock' | 'orders' | 'reports' | 'pos-devices' | 'settings';
 
-export type PosProvider = 'PAVO_CLOUD';
-export type PosStatus = 'ACTIVE' | 'PASSIVE' | 'MAINTENANCE';
+/** Global üst filtre: boş dize "Tümü" anlamına gelir. */
+export type Filters = { kiosk: string; section: string };
 
-export type PosDevice = {
+/** 17 ana kategoriden biri (API: /api/admin/sections). */
+export type Section = {
   id: string;
   name: string;
-  providerType: PosProvider;
-  serialNumber: string | null;
-  ipAddress: string | null;
-  port: number | null;
-  status: PosStatus;
-  isDefault: boolean;
-  cloudSourceFingerprint: string | null;
-  cloudPairingId: number | null;
-  paired: boolean;
+  nameEn: string;
+  tagline: string;
+  taglineEn: string;
+  icon: string;
+  accent: string;
+  orderPrefix: string;
+  position: number;
+  active: boolean;
+  productCount: number;
+  categoryCount: number;
 };
 
-export type PosDeviceDraft = {
+export type SectionDraft = {
+  id?: string;
   name: string;
-  providerType: PosProvider;
-  serialNumber: string | null;
-  ipAddress: string | null;
-  port: number | null;
-  status: PosStatus;
-  isDefault: boolean;
+  nameEn: string;
+  tagline: string;
+  taglineEn: string;
+  icon: string;
+  accent: string;
+  orderPrefix: string;
+  active: boolean;
 };
 
-export type PosPairing = {
-  success: boolean;
-  pairingId: number;
-  pairingCode: string;
-  message: string;
+/** API: /api/admin/kiosks */
+export type Kiosk = {
+  id: string;
+  name: string;
+  featuredSectionId: string;
+  posSerial: string | null;
+  active: boolean;
+  lastSeenAt: string | null;
+  online: boolean;
+  orderPrefix: string;
+  todayOrderCount: number;
+  todayRevenue: number;
+  appVersion: string | null;
 };
 
+export type KioskUpdate = {
+  name?: string;
+  featuredSectionId?: string;
+  posSerial?: string | null;
+  active?: boolean;
+};
+
+/** API: /api/admin/castles/devices */
+export type CastlesDevice = {
+  serial: string;
+  name: string;
+  active: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  assignedKioskId: string | null;
+};
+
+export type CastlesDeviceDraft = { serial: string; name: string; active: boolean };
+
+/** Alt kategori (API: /api/admin/categories). */
 export type Category = {
   id: string;
+  sectionId: string;
   name: string;
   eyebrow: string;
   position: number;
@@ -71,6 +104,7 @@ export type ProductCustomization = {
 
 export type Product = {
   id: string;
+  sectionId: string;
   categoryId: string;
   categoryName?: string;
   name: string;
@@ -96,6 +130,9 @@ export type Product = {
   customization: ProductCustomization;
 };
 
+export type DashboardKioskRow = { kioskId: string; orderCount: number; revenue: number };
+export type DashboardSectionRow = { sectionId: string; orderCount: number; revenue: number };
+
 export type Dashboard = {
   stats: {
     product_count: number;
@@ -107,6 +144,10 @@ export type Dashboard = {
   };
   recentOrders: AdminOrder[];
   topProducts: Array<{ name: string; quantity: number; revenue: number }>;
+  /** Kiosk bazında bugünkü özet (API döndürmezse boş kalır). */
+  kiosks: DashboardKioskRow[];
+  /** Ana kategori bazında bugünkü ciro (API döndürmezse boş kalır). */
+  sections: DashboardSectionRow[];
 };
 
 export type AdminOrder = {
@@ -117,6 +158,8 @@ export type AdminOrder = {
   total: number;
   created_at: string;
   item_count?: number;
+  kioskId: string | null;
+  sectionIds: string[];
 };
 
 export type StockMovement = {
@@ -129,6 +172,7 @@ export type StockMovement = {
   after_quantity: number | null;
   note: string;
   created_at: string;
+  kiosk_id?: string | null;
 };
 
 export type Report = {

@@ -9,9 +9,10 @@ server {
     add_header X-Frame-Options DENY always;
     add_header Referrer-Policy same-origin always;
 
-    # Panel istekleri küme içindeki kahve API'sine iletilir; /api/admin dışarıya yalnızca bu yoldan açıktır.
+    # Panel istekleri küme içindeki MagicPay Kiosk API'sine iletilir; /api/admin dışarıya yalnızca bu yoldan açıktır.
+    # API_UPSTREAM konteyner açılışında envsubst ile doldurulur (varsayılan Dockerfile'da).
     location ~ ^/(api|health|uploads)(/|$) {
-        proxy_pass http://magiccoffee-api.magiccoffee.svc.cluster.local;
+        proxy_pass ${API_UPSTREAM};
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
@@ -20,7 +21,11 @@ server {
 
     location /assets/ {
         expires 30d;
+        # add_header bu blokta tanımlandığı için server düzeyindeki güvenlik başlıkları burada yinelenir.
         add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy same-origin always;
         try_files $uri =404;
     }
 

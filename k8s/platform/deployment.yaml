@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magickiosk-panel
+  namespace: magickiosk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: magickiosk-panel
+  template:
+    metadata:
+      labels:
+        app: magickiosk-panel
+    spec:
+      imagePullSecrets:
+        - name: dockerhub
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: panel
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            # nginx proxy hedefi (templates/default.conf.template); küme içi MagicPay Kiosk API servisi.
+            - name: API_UPSTREAM
+              value: http://magickiosk-api.magickiosk.svc.cluster.local
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 15
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20

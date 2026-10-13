@@ -1,11 +1,11 @@
-# Magic Coffee Panel
+# MagicPay Kiosk Yönetimi (panel, `platform` dalı)
 
-Magic Coffee kiosk sisteminin ürün, kategori, stok, sipariş ve raporlama yönetim panelidir.
+17 kiosklu, 17 ana kategorili MagicPay Kiosk platformunun yönetim panelidir.
 
 ## Gereksinimler
 
 - Node.js 20+
-- Magic Coffee API: `http://127.0.0.1:8300`
+- MagicPay Kiosk API (yerelde varsayılan `http://127.0.0.1:8000`, `VITE_DEV_API_PROXY` ile değiştirilebilir)
 
 ## Kurulum
 
@@ -14,26 +14,28 @@ npm install
 npm run dev
 ```
 
-Panel geliştirme adresi:
+Panel geliştirme adresi: `http://127.0.0.1:5371`
 
-```text
-http://127.0.0.1:5371
-```
-
-Üretim derlemesi:
+API olmadan arayüzü denemek için (yalnız geliştirme, üretim derlemesine girmez):
 
 ```powershell
-npm run build
+$env:VITE_MOCK = '1'; npm run dev
 ```
+
+Üretim derlemesi: `npm run build`
 
 ## Özellikler
 
-- Dashboard
-- Ürün ve kategori yönetimi
-- Dosyadan ürün görseli yükleme
-- Ürüne özel kahve özelleştirme adımları
-- Stok takibi ve satır üzerinden stok işlemleri
-- Kiosk satış durumunu açma/kapatma
-- Sipariş ve satış raporları
-- Pavo Cloud POS terminali ekleme, düzenleme, silme, durum ve varsayılan terminal yönetimi
-- Kullanıcı fingerprint değeriyle eşleştirme ve 3 saniyelik otomatik durum kontrolü
+- Gösterge paneli: seçili filtre için toplamlar, kiosk bazında tablo, kategori bazında ciro
+- Global filtre: Kiosk (Tümü / k01..k17) ve Kategori (Tümü / 17), tarayıcıda saklanır
+- Kiosklar: vitrin kategorisi, Castles POS ataması, aktiflik, çevrimiçi durumu, bugünkü satış
+- Kategoriler (17 ana kategori): ad, açıklama, ikon, renk, sıralama, aktiflik
+- Alt kategoriler, ürünler (özelleştirme, stok, görsel yükleme), stok hareketleri
+- Siparişler ve raporlar (kiosk/kategori filtreli)
+- POS Cihazları (Castles): seri listesi ve atanan kiosk
+
+## Dağıtım
+
+- Panel API'ye göreli yolla bağlanır; nginx `templates/default.conf.template` içindeki `API_UPSTREAM`
+  (varsayılan `http://magickiosk-api.magickiosk.svc.cluster.local`) hedefine proxy yapar.
+- `k8s/platform/*` ve `.github/workflows/deploy-platform.yml`: `platform` dalına push → `magickiosk` namespace.
