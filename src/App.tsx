@@ -9,6 +9,7 @@
   ChevronRight,
   ClipboardList,
   Cloud,
+  Coffee,
   CreditCard,
   Database,
   Edit3,
@@ -36,8 +37,9 @@
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { API_BASE_URL, KIOSK_URL, api, assetUrl } from './api';
-import type { AdminOrder, Category, CustomizationOption, Dashboard, PosDevice, PosDeviceDraft, Product, ProductCustomization, ProductDraft, Report, StockMovement, ViewKey } from './types';
+import { API_BASE_URL, ApiError, KIOSK_URL, api, assetUrl } from './api';
+import { MachinesView, vendNeedsAttention } from './MachinesView';
+import type { AdminOrder, Category, CustomizationOption, Dashboard, Machine, MachineDraft, MachineProduct, PosDevice, PosDeviceDraft, Product, ProductCustomization, ProductDraft, Report, StockMovement, VendJob, ViewKey } from './types';
 
 const money = (value: number) => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL`;
 const dateTime = (value: string) => new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
@@ -49,7 +51,7 @@ const navGroups: Array<{ label: string; items: Array<{ key: ViewKey; label: stri
   { label: 'MENÜ VE FİYAT', items: [{ key: 'products', label: 'Menü Ürünleri', icon: ShoppingBag }, { key: 'categories', label: 'Kategoriler', icon: Tags }] },
   { label: 'STOK VE MUTFAK', items: [{ key: 'stock', label: 'Stok Yönetimi', icon: Boxes }] },
   { label: 'RAPORLAMA', items: [{ key: 'reports', label: 'Raporlar', icon: BarChart3 }] },
-  { label: 'SİSTEM', items: [{ key: 'pos-terminals', label: 'POS Terminalleri', icon: CreditCard }, { key: 'settings', label: 'Ayarlar', icon: Settings }] },
+  { label: 'SİSTEM', items: [{ key: 'pos-terminals', label: 'POS Terminalleri', icon: CreditCard }, { key: 'machines', label: 'Otomatlar', icon: Coffee }, { key: 'settings', label: 'Ayarlar', icon: Settings }] },
 ];
 
 function Brand() {
@@ -82,7 +84,7 @@ function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string;
 function Loading() { return <div className="state-card"><Loader2 className="spin" /><b>Veriler hazırlanıyor</b><span>Lütfen kısa bir süre bekleyin.</span></div>; }
 function Empty({ title, text }: { title: string; text: string }) { return <div className="empty"><PackagePlus /><b>{title}</b><span>{text}</span></div>; }
 
-function DashboardView({ data, loading, onRefresh, onNavigate }: { data: Dashboard | null; loading: boolean; onRefresh: () => void; onNavigate: (view: ViewKey) => void }) {
+function DashboardView({ data, loading, vendAttention, onRefresh, onNavigate }: { data: Dashboard | null; loading: boolean; vendAttention: number | null; onRefresh: () => void; onNavigate: (view: ViewKey) => void }) {
   if (loading && !data) return <Loading />;
   const stats = data?.stats;
   const cards = [
@@ -94,6 +96,11 @@ function DashboardView({ data, loading, onRefresh, onNavigate }: { data: Dashboa
   return <>
     <PageHeader eyebrow="OPERASYON" title="Hoş geldin, Magic Coffee" description="Kiosk menüsünü, stok durumunu ve satış performansını tek merkezden yönet." actions={<button className="secondary" onClick={onRefresh}><RefreshCcw /> Yenile</button>} />
     <div className="stat-grid">{cards.map((card) => <article className={`stat-card ${card.featured ? 'featured' : ''}`} key={card.label}><span><card.icon /></span><small>{card.label}</small><b>{card.value}</b><p>{card.note}</p></article>)}</div>
+    {vendAttention !== null && <button type="button" className={`attention-strip ${vendAttention ? 'warning' : ''}`} onClick={() => onNavigate('machines')}>
+      {vendAttention ? <AlertTriangle /> : <Coffee />}
+      <span><b>{vendAttention}</b><small>{vendAttention ? 'Dikkat gerektiren otomat işleri · iadesi başarısız satışlar elle kontrol edilmeli' : 'Dikkat gerektiren otomat işi yok'}</small></span>
+      <ChevronRight />
+    </button>}
     <div className="operation-grid">
       <button onClick={() => onNavigate('products')}><span><ShoppingBag /></span><b>Menü ve fiyat</b><p>Ürünleri, fiyatları, görselleri ve satış durumunu yönet.</p><ChevronRight /></button>
       <button onClick={() => onNavigate('stock')}><span><Boxes /></span><b>Stok kontrolü</b><p>Kritik ürünleri gör, stok giriş ve düzeltmelerini kaydet.</p><ChevronRight /></button>
@@ -589,16 +596,50 @@ export default function App() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [report, setReport] = useState<Report | null>(null);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [machinesLoading, setMachinesLoading] = useState(false);
+  const [machinesError, setMachinesError] = useState('');
+  const [vendJobs, setVendJobs] = useState<VendJob[]>([]);
+  const [vendJobsLoading, setVendJobsLoading] = useState(false);
+  const [vendJobsError, setVendJobsError] = useState('');
+  const [vendJobFilter, setVendJobFilter] = useState({ machine: '', status: '' });
+  const [vendAttention, setVendAttention] = useState<number | null>(null);
 
   const notify = useCallback((value: string) => { setMessage(value); window.setTimeout(() => setMessage(''), 2800); }, []);
   const loadCore = useCallback(async () => { setLoading(true); try { const [health, categoryData, productData] = await Promise.all([api.health(), api.categories(), api.products()]); setApiOnline(health.status === 'ok'); setCategories(categoryData); setProducts(productData); } catch { setApiOnline(false); } finally { setLoading(false); } }, []);
-  const loadDashboard = useCallback(async () => { setLoading(true); try { setDashboard(await api.dashboard()); } finally { setLoading(false); } }, []);
+  // Otomat dikkat sayacı: otomat yoksa veya uç yoksa gizlenir (null).
+  const loadVendAttention = useCallback(async () => {
+    try {
+      const list = await api.machines();
+      if (!list.length) { setVendAttention(null); return; }
+      const failed = await api.vendJobs({ status: 'REFUND_FAILED' });
+      setVendAttention(failed.filter(vendNeedsAttention).length);
+    } catch { setVendAttention(null); }
+  }, []);
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.dashboard();
+      setDashboard(data);
+      // Sayaç gösterge yanıtından okunur; yoksa otomat işlerinden hesaplanır.
+      if (data.vending) setVendAttention(data.vending.machineCount > 0 ? data.vending.attentionCount : null);
+      else void loadVendAttention();
+    } finally { setLoading(false); }
+  }, [loadVendAttention]);
+  const loadMachines = useCallback(async () => {
+    setMachinesLoading(true); setMachinesError('');
+    try { setMachines(await api.machines()); } catch (err) { setMachinesError((err as Error).message); } finally { setMachinesLoading(false); }
+  }, []);
+  const loadVendJobs = useCallback(async (filter = vendJobFilter) => {
+    setVendJobsLoading(true); setVendJobsError('');
+    try { setVendJobs(await api.vendJobs(filter)); } catch (err) { setVendJobsError((err as Error).message); } finally { setVendJobsLoading(false); }
+  }, [vendJobFilter]);
   const loadStock = useCallback(async () => { setLoading(true); try { const [stock, history] = await Promise.all([api.stock(), api.stockMovements()]); setProducts(stock); setMovements(history); } finally { setLoading(false); } }, []);
   const loadOrders = useCallback(async () => { setLoading(true); try { setOrders(await api.orders()); } finally { setLoading(false); } }, []);
   const loadReports = useCallback(async (start: string, end: string) => { setLoading(true); try { setReport(await api.reports(start, end)); } finally { setLoading(false); } }, []);
   useEffect(() => { loadCore(); loadDashboard(); }, [loadCore, loadDashboard]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; localStorage.setItem('magic-panel-theme', dark ? 'dark' : 'light'); }, [dark]);
-  const navigate = (view: ViewKey) => { setActiveView(view); setMobileNav(false); if (view === 'dashboard') loadDashboard(); if (view === 'orders') loadOrders(); if (view === 'stock') loadStock(); };
+  const navigate = (view: ViewKey) => { setActiveView(view); setMobileNav(false); if (view === 'dashboard') loadDashboard(); if (view === 'orders') loadOrders(); if (view === 'stock') loadStock(); if (view === 'machines') { void loadMachines(); void loadVendJobs(); } };
   const refreshCore = async () => { await loadCore(); notify('Veriler yenilendi.'); };
   const createProduct = async (draft: ProductDraft) => { await api.createProduct(draft); await loadCore(); notify('Ürün oluşturuldu ve kioska eklendi.'); };
   const updateProduct = async (id: string, draft: ProductDraft) => { await api.updateProduct(id, draft); await loadCore(); notify('Ürün güncellendi.'); };
@@ -609,12 +650,29 @@ export default function App() {
   const reorderCategories = async (ids: string[]) => { const ordered = ids.map((id, position) => ({ ...categories.find((item) => item.id === id)!, position })); setCategories(ordered); try { await api.reorderCategories(ids); notify('Kategori sırası güncellendi.'); } catch { await loadCore(); } };
   const adjustStock = async (id: string, payload: { mode: 'set' | 'add' | 'remove'; quantity: number; note: string }) => { await api.adjustStock(id, payload); await loadStock(); notify('Stok hareketi kaydedildi.'); };
   const updateStockSettings = async (id: string, payload: { stockTrackingEnabled?: boolean; stockSellable?: boolean }) => { await api.updateStockSettings(id, payload); await loadStock(); notify(payload.stockTrackingEnabled === true ? 'Stok takibi açıldı.' : payload.stockTrackingEnabled === false ? 'Stok takibi kapatıldı.' : payload.stockSellable === false ? 'Ürün anlık satışa kapatıldı.' : 'Ürün yeniden satışa açıldı.'); };
+  // Kahve otomatları
+  const createMachine = async (draft: MachineDraft) => { await api.createMachine(draft); await loadMachines(); notify('Otomat eklendi. Köprü cihazı için token oluşturun.'); };
+  const updateMachine = async (id: string, draft: Partial<MachineDraft>) => { await api.updateMachine(id, draft); await loadMachines(); notify('active' in draft && Object.keys(draft).length === 1 ? (draft.active ? 'Otomat aktifleştirildi.' : 'Otomat pasifleştirildi.') : 'Otomat güncellendi.'); };
+  const deleteMachine = async (id: string) => { await api.deleteMachine(id); await loadMachines(); notify('Otomat silindi.'); };
+  const saveMachineProducts = async (id: string, rows: MachineProduct[]) => { await api.saveMachineProducts(id, rows); await loadMachines(); notify(`${rows.length} ürün eşlemesi kaydedildi.`); };
+  const retryVendRefund = async (id: string) => {
+    try { await api.retryVendRefund(id); }
+    catch (err) {
+      // Önceki iadenin sonucu belirsiz (409): çift iade riski kullanıcıya sorulup onaylanırsa zorla tekrar denenir.
+      if (!(err instanceof ApiError) || err.status !== 409) throw err;
+      const confirmed = window.confirm(`${err.message}\n\nÖnceki iade POS'ta gerçekleşmiş olabilir. POS / banka kayıtlarını kontrol ettiyseniz ve iade yapılmadığından eminseniz iadeyi yine de tekrar denemek ister misiniz? (Çift iade riski)`);
+      if (!confirmed) return;
+      await api.retryVendRefund(id, true);
+    }
+    await loadVendJobs(); notify('İade yeniden denendi.');
+  };
+  const changeVendJobFilter = (patch: Partial<{ machine: string; status: string }>) => { const next = { ...vendJobFilter, ...patch }; setVendJobFilter(next); void loadVendJobs(next); };
   const viewTitle = navGroups.flatMap((group) => group.items).find((item) => item.key === activeView)?.label ?? '';
   return <div className="app">
     <header className="topbar"><button className="mobile-menu" aria-label={mobileNav ? 'Menüyü kapat' : 'Menüyü aç'} aria-expanded={mobileNav} onClick={() => setMobileNav((value) => !value)}><MenuIcon /></button><Brand /><div className="top-actions"><span className={`api-pill ${apiOnline ? 'online' : ''}`}><Activity /> Backend: {apiOnline ? 'online' : 'offline'}</span><a href={KIOSK_URL} target="_blank" rel="noreferrer"><ExternalLink /> Kiosku Aç</a><button onClick={() => setDark((value) => !value)}>{dark ? <Sun /> : <Moon />}{dark ? 'Aydınlık Mod' : 'Karanlık Mod'}</button><span className="avatar">MC</span></div></header>
     {mobileNav && <button type="button" className="mobile-nav-backdrop" onClick={() => setMobileNav(false)} aria-label="Menüyü kapat" />}
     <aside className={`sidebar ${mobileNav ? 'open' : ''}`}><div className="sidebar-title">Magic Coffee Panel</div><nav>{navGroups.map((group) => <section key={group.label}><small>{group.label}</small>{group.items.map((item) => <button className={activeView === item.key ? 'active' : ''} key={item.key} onClick={() => navigate(item.key)}><item.icon /><span>{item.label}</span><ChevronRight /></button>)}</section>)}</nav></aside>
-    <main className="content"><div className="mobile-title">{viewTitle}</div>{activeView === 'dashboard' && <DashboardView data={dashboard} loading={loading} onRefresh={loadDashboard} onNavigate={navigate} />}{activeView === 'products' && <ProductsView products={products} categories={categories} loading={loading} onRefresh={refreshCore} onCreate={createProduct} onUpdate={updateProduct} onDelete={deleteProduct} />}{activeView === 'categories' && <CategoriesView categories={categories} loading={loading} onCreate={createCategory} onUpdate={updateCategory} onDelete={deleteCategory} onReorder={reorderCategories} />}{activeView === 'stock' && <StockView products={products} movements={movements} loading={loading} onRefresh={loadStock} onAdjust={adjustStock} onSettings={updateStockSettings} />}{activeView === 'orders' && <OrdersView orders={orders} loading={loading} onRefresh={loadOrders} />}{activeView === 'reports' && <ReportsView report={report} loading={loading} onLoad={loadReports} />}{activeView === 'pos-terminals' && <PosTerminalsView notify={notify} />}{activeView === 'settings' && <SettingsView apiOnline={apiOnline} dark={dark} onToggleDark={() => setDark((value) => !value)} />}</main>
+    <main className="content"><div className="mobile-title">{viewTitle}</div>{activeView === 'dashboard' && <DashboardView data={dashboard} loading={loading} vendAttention={vendAttention} onRefresh={loadDashboard} onNavigate={navigate} />}{activeView === 'products' && <ProductsView products={products} categories={categories} loading={loading} onRefresh={refreshCore} onCreate={createProduct} onUpdate={updateProduct} onDelete={deleteProduct} />}{activeView === 'categories' && <CategoriesView categories={categories} loading={loading} onCreate={createCategory} onUpdate={updateCategory} onDelete={deleteCategory} onReorder={reorderCategories} />}{activeView === 'stock' && <StockView products={products} movements={movements} loading={loading} onRefresh={loadStock} onAdjust={adjustStock} onSettings={updateStockSettings} />}{activeView === 'orders' && <OrdersView orders={orders} loading={loading} onRefresh={loadOrders} />}{activeView === 'reports' && <ReportsView report={report} loading={loading} onLoad={loadReports} />}{activeView === 'pos-terminals' && <PosTerminalsView notify={notify} />}{activeView === 'machines' && <MachinesView machines={machines} products={products} categories={categories} jobs={vendJobs} loading={machinesLoading} jobsLoading={vendJobsLoading} error={machinesError} jobsError={vendJobsError} jobFilter={vendJobFilter} onJobFilter={changeVendJobFilter} onRefresh={() => { void loadMachines(); }} onRefreshJobs={() => { void loadVendJobs(); }} onCreate={createMachine} onUpdate={updateMachine} onDelete={deleteMachine} onCreateToken={api.createMachineToken} loadMappings={api.machineProducts} loadOptions={api.machineProductOptions} onSaveMappings={saveMachineProducts} onRetryRefund={retryVendRefund} />}{activeView === 'settings' && <SettingsView apiOnline={apiOnline} dark={dark} onToggleDark={() => setDark((value) => !value)} />}</main>
     {message && <div className="toast"><Check />{message}</div>}
   </div>;
 }

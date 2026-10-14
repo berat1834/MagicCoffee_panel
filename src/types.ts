@@ -1,4 +1,4 @@
-export type ViewKey = 'dashboard' | 'products' | 'categories' | 'stock' | 'orders' | 'reports' | 'pos-terminals' | 'settings';
+export type ViewKey = 'dashboard' | 'products' | 'categories' | 'stock' | 'orders' | 'reports' | 'pos-terminals' | 'machines' | 'settings';
 
 export type PosProvider = 'PAVO_CLOUD';
 export type PosStatus = 'ACTIVE' | 'PASSIVE' | 'MAINTENANCE';
@@ -107,6 +107,8 @@ export type Dashboard = {
   };
   recentOrders: AdminOrder[];
   topProducts: Array<{ name: string; quantity: number; revenue: number }>;
+  /** Kahve otomatı özeti (API göndermezse yok). */
+  vending?: { attentionCount: number; machineCount: number; onlineMachineCount: number } | null;
 };
 
 export type AdminOrder = {
@@ -140,3 +142,54 @@ export type Report = {
 };
 
 export type ProductDraft = Omit<Product, 'id' | 'categoryName' | 'available' | 'unavailableReason' | 'position'> & { id?: string };
+
+/** Otomat satış modu: AUTO (köprü tespit eder) / REMOTE (MDB 4.3 uzaktan seçim) / CREDIT (müşteri makinede düğmeye basar). */
+export type MachineMode = 'AUTO' | 'REMOTE' | 'CREDIT';
+
+/** API: /api/admin/machines */
+export type Machine = {
+  id: string;
+  name: string;
+  mode: MachineMode;
+  detectedMode: 'REMOTE' | 'CREDIT' | null;
+  /** API'nin mod uyarısı (ör. kredi modunda müşterinin düğmeye basması gerektiği). */
+  modeWarning: string | null;
+  active: boolean;
+  online: boolean;
+  lastSeenAt: string | null;
+  agentVersion: string | null;
+  hasToken: boolean;
+  productCount: number;
+  activeJobCount: number;
+  attentionCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type MachineDraft = { id?: string; name: string; mode: MachineMode; active: boolean };
+
+/** Ürün (veya ürün × seçenek kombinasyonu) → makine ürün numarası eşlemesi. optionKey boşsa ürünün standart hali. */
+export type MachineProduct = { productId: string; optionKey: string; selectionNo: number; price: number | null; active: boolean };
+
+/** GET /api/admin/machines/{id}/products/options?productId= : ürünün seçenek kombinasyonları. */
+export type MachineProductOption = { optionKey: string; label: string; price: number | null; mapped: boolean; selectionNo: number | null; mappedPrice: number | null };
+
+export type VendJobStatus = 'QUEUED' | 'SENT' | 'WAITING_SELECTION' | 'DISPENSING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'REFUNDED' | 'REFUND_FAILED';
+
+/** API: /api/admin/vend-jobs */
+export type VendJob = {
+  id: string;
+  orderNumber: string;
+  machineId: string;
+  productId: string;
+  productName: string;
+  variantLabel: string;
+  selectionNo: number | null;
+  amount: number;
+  status: VendJobStatus;
+  message: string;
+  attempts: number;
+  needsManualRefund: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
